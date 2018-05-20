@@ -1,0 +1,7 @@
+[package]
+name = "rust_hello"
+version = "0.1.0"
+authors = ["Compilenix <Compilenix@compilenix.org>"]
+
+[dependencies]
+num_cpus = "1.8.0"
