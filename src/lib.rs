@@ -3,6 +3,16 @@ use std::sync::Mutex;
 use std::sync::mpsc;
 use std::thread;
 
+pub fn string_trim_end(mut s: &str) -> &str {
+    const TRAILER: &'static str = "\0";
+
+    while s.ends_with(TRAILER) {
+        let new_len = s.len().saturating_sub(TRAILER.len());
+        s = &s[..new_len];
+    }
+    s
+}
+
 enum Message {
     NewJob(Job),
     Terminate,

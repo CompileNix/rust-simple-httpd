@@ -5,3 +5,4 @@ authors = ["Compilenix <Compilenix@compilenix.org>"]
 
 [dependencies]
 num_cpus = "1.8.0"
+chrono = "0.4"
