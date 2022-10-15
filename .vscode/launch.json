@@ -7,28 +7,36 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug rust_hello",
+            "name": "Debug executable 'rust-simple-httpd'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=rust_hello"
-                ]
+                    "--bin=rust-simple-httpd",
+                    "--package=rust-simple-httpd"
+                ],
+                "filter": {
+                    "name": "rust-simple-httpd",
+                    "kind": "bin"
+                }
             },
             "args": [],
-            "cwd": "${workspaceFolder}",
-            "terminal": "integrated",
-            "stdio": null
+            "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug tests in rust_hello",
+            "name": "Debug unit tests in executable 'rust-simple-httpd'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=rust_hello"
-                ]
+                    "--bin=rust-simple-httpd",
+                    "--package=rust-simple-httpd"
+                ],
+                "filter": {
+                    "name": "rust-simple-httpd",
+                    "kind": "bin"
+                }
             },
             "args": [],
             "cwd": "${workspaceFolder}"
