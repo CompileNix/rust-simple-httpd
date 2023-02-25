@@ -23,22 +23,22 @@ use env_logger::Env;
 
 const CRLF: &str = "\r\n";
 
-pub enum WorkerMessage {
+enum WorkerMessage {
     NewJob(Job),
     Terminate,
 }
 
-pub enum ConnectionHandlerMessage {
+enum ConnectionHandlerMessage {
     NewConnection(TcpStream),
     Terminate,
 }
 
-pub struct ThreadPool {
+struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<WorkerMessage>,
 }
 
-pub trait FnBox {
+trait FnBox {
     fn call_box(self: Box<Self>);
 }
 
@@ -48,7 +48,7 @@ impl<F: FnOnce()> FnBox for F {
     }
 }
 
-pub type Job = Box<dyn FnBox + Send + 'static>;
+type Job = Box<dyn FnBox + Send + 'static>;
 
 impl ThreadPool {
     /// Create a new `ThreadPool`.
@@ -58,7 +58,7 @@ impl ThreadPool {
     /// # Panics
     ///
     /// The `new` function will panic if the size is zero.
-    #[must_use] pub fn new(size: usize) -> ThreadPool {
+    #[must_use] fn new(size: usize) -> ThreadPool {
         assert!(size > 0);
 
         let (sender, receiver) = mpsc::channel();
@@ -78,7 +78,7 @@ impl ThreadPool {
     /// A return value of `Err` means that the data will never be received, but a return value of
     /// `Ok` does not mean that the data will be received. It is possible for the corresponding
     /// receiver to hang up immediately after this function returns `Ok`.
-    pub fn execute<F>(&self, f: F)  -> Result<(), SendError<WorkerMessage>>
+    fn execute<F>(&self, f: F)  -> Result<(), SendError<WorkerMessage>>
         where F: FnOnce() + Send + 'static, {
 
         self.sender.send(WorkerMessage::NewJob(Box::new(f)))
@@ -111,7 +111,7 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(
+    #[must_use] fn new(
         id: usize,
         receiver: Arc<Mutex<mpsc::Receiver<WorkerMessage>>>
     ) -> Worker {
@@ -136,7 +136,7 @@ impl Worker {
     }
 }
 
-pub struct ConnectionHandler {
+struct ConnectionHandler {
     thread: thread::JoinHandle<()>,
 }
 
@@ -145,7 +145,7 @@ impl ConnectionHandler {
     ///
     /// # Panics
     /// When `thread_count` is less then 1
-    #[must_use] pub fn new(
+    #[must_use] fn new(
         thread_count: usize,
         receiver: Arc<Mutex<mpsc::Receiver<ConnectionHandlerMessage>>>,
     ) -> ConnectionHandler {
@@ -210,7 +210,8 @@ fn handle_connection(mut stream: TcpStream) {
             let is_last_buffer = buffer_raw.ends_with('\0');
             let buffer_raw = buffer_raw.trim_end_matches('\0');
             bytes_read += buffer_raw.len();
-            request_raw.push_str(buffer_raw);
+            // remove double CRLF from end of request headers, if exists
+            request_raw.push_str(buffer_raw.trim_end_matches("\r\n\r\n"));
             if is_last_buffer {
                 break;
             }
@@ -221,7 +222,7 @@ fn handle_connection(mut stream: TcpStream) {
         status_code = 413;
         status_message = "Payload Too Large";
         body = "413 - Payload Too Large\n";
-        headers = compose_http_response_headers(body.len(), "text/html; charset=utf-8");
+        headers = compose_http_response_headers(body.len(), "text/plain; charset=utf-8");
         let response = compose_http_response(status_code, status_message, headers.as_str(), body);
 
         let _ = stream.write(response.as_bytes()).unwrap();
@@ -229,14 +230,14 @@ fn handle_connection(mut stream: TcpStream) {
         return;
     }
 
-    // debug!("{}", request_raw);
-    debug!("Request has {} bytes", request_raw.len());
+    // debug!("Request has {} bytes", request_raw.len());
+    debug!("{request}", request = request_raw.lines().take(1).collect::<String>());
 
     if !request_raw.starts_with("GET") {
         status_code = 501;
         status_message = "Not Implemented";
         body = "501 - Not Implemented\n";
-        headers = compose_http_response_headers(body.len(), "text/html; charset=utf-8");
+        headers = compose_http_response_headers(body.len(), "text/plain; charset=utf-8");
         let response = compose_http_response(status_code, status_message, headers.as_str(), body);
 
         let _ = stream.write(response.as_bytes()).unwrap();
@@ -251,9 +252,8 @@ fn handle_connection(mut stream: TcpStream) {
             .unwrap()
             .read_to_string(&mut contents)
             .unwrap();
-        files.insert(String::from("/index.html"), contents.clone());
+        files.insert(String::from("/index.html"), contents);
     }
-    // files.insert(String::from("/index.html"), String::from("Hello world!"));
 
     if let Some(x) = files.get("/index.html") {
         body = x.as_str();
@@ -272,13 +272,14 @@ fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .format_target(false)
+        .format_indent(Some("[0000-00-00T00:00:00.000Z INFO ] ".len()))
         .init();
 
     let (sender, receiver) = mpsc::channel();
     let receiver = Arc::new(Mutex::new(receiver));
     let sender_signal = sender.clone();
-    let mut signals = Signals::new([SIGINT, SIGQUIT]).unwrap();
     thread::spawn(move || {
+        let mut signals = Signals::new([SIGINT, SIGQUIT]).unwrap();
         for sig in signals.forever() {
             info!("Received process signal {sig:?}");
             sender_signal.send(ConnectionHandlerMessage::Terminate).unwrap_or_default();
@@ -290,15 +291,14 @@ fn main() {
         }
     });
 
-    let thread_count = num_cpus::get() * 2;
-    //let thread_count = num_cpus::get() << num_cpus::get();
+    let worker_count = num_cpus::get();
 
     let bind_addr = "127.0.0.1:8000";
     info!("listening on {bind_addr}");
     let listener = TcpListener::bind(bind_addr).unwrap();
 
     let connection_handler = ConnectionHandler::new(
-        thread_count,
+        worker_count,
         receiver,
     );
     thread::spawn(move || {
