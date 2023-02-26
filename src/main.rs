@@ -349,8 +349,7 @@ fn handle_connection(mut stream: TcpStream, worker_id: usize) {
                 value
             }
             Err(err) => {
-                // remote sent some invalid utf8
-                // TODO: Implement HTTP 400
+                // TODO: use HTTP 400
                 debug!("Worker {worker_id}: HTTP 400: remote sent some invalid utf8: {err}");
                 return;
             }
