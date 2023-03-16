@@ -1,9 +1,7 @@
 extern crate env_logger;
 extern crate log;
-extern crate chrono;
 extern crate num_cpus;
 
-use chrono::prelude::*;
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;
 use std::collections::HashMap;
@@ -267,7 +265,7 @@ mod tests {
 }
 
 #[must_use] fn new_date_time_http_rfc() -> String {
-    Utc::now().format("%a, %b %e %Y %T GMT").to_string()
+    time::OffsetDateTime::now_utc().to_string()
 }
 
 #[must_use] fn compose_http_response_headers(content_len: usize, content_type: &str) -> String {

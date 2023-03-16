@@ -20,8 +20,8 @@ codegen-units = 1
 
 [dependencies]
 num_cpus = "1.13.1"
-chrono = "0.4.22"
 signal-hook = "0.3.14"
+time = "0.3.20"
 log = "0.4.17"
 env_logger = "0.10.0"
 indoc = "2.0.0"
