@@ -265,7 +265,9 @@ mod tests {
 }
 
 #[must_use] fn new_date_time_http_rfc() -> String {
-    time::OffsetDateTime::now_utc().to_string()
+    let now = time::OffsetDateTime::now_utc();
+    let format = time::format_description::parse("[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT").unwrap();
+    now.format(&format).unwrap_or_default()
 }
 
 #[must_use] fn compose_http_response_headers(content_len: usize, content_type: &str) -> String {
