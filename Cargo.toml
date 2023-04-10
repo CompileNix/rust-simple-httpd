@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+env_logger = "0.10"
+indoc = "2.0"
+log = "0.4"
 num_cpus = "1.15"
 signal-hook = "0.3"
 time = { version = "0.3", features = [ "formatting", "serde-well-known" ] }
-log = "0.4"
-env_logger = "0.10"
-indoc = "2.0"
+tokio = { version = "1.27.0", features = ["full"] }
