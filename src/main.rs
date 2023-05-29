@@ -11,7 +11,8 @@ use indoc::formatdoc;
 use log::{debug, info, trace, warn};
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;
-use std::println;
+use std::collections::HashMap;
+use std::path::Path;
 use std::process;
 use std::sync::Arc;
 use std::thread;
@@ -23,43 +24,12 @@ use tokio::time::Duration;
 const BUFFER_SIZE: usize = 32;
 const TIME_FORMAT_VERSION: usize = 2;
 
-/// This function searches for the end of HTTP headers in the input string
-/// `content`. It returns an `Option<usize>` type that represents the index of
-/// the end of HTTP headers, if found, or `None` if the end of HTTP headers is
-/// not found.
-///
-/// # Arguments
-///
-/// * `content` - A string slice which represents the content to search for the
-///   end of HTTP headers.
-///
-/// # Returns
-///
-/// * An optional index value which represents the index of the end of HTTP
-///   headers in the input `content` string.
-/// If the end of HTTP headers is found, the function returns `Some(index)`
-/// where `index` is the index of the end of HTTP headers. If the end of HTTP
-/// headers is not found, the function returns `None`.
-///
-/// # Examples
-///
-/// ```
-/// let content = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nHello world\n";
-/// let end_of_headers = contains_end_of_http_headers(content);
-///
-/// assert_eq!(end_of_headers, Some(35));
-/// ```
-fn contains_end_of_http_headers(content: &str) -> Option<usize> {
-    content.rfind("\r\n\r\n")
-}
-
-/// Searches for the sequence "\r\n\r\n" in a buffer of a given size, in reverse
-/// order.
+/// Searches for the sequence "\r\n\r\n" in a buffer of a given size.
 ///
 /// This function takes a reference to a buffer of a size defined by
-/// `BUFFER_SIZE` and searches for the byte pattern representing "\r\n\r\n" in
-/// reverse order. The search starts from the end of the buffer and proceeds
-/// towards the start of the buffer.
+/// `BUFFER_SIZE` and searches for the byte pattern representing "\r\n\r\n". The
+/// search starts from the beginning of the buffer and proceeds towards the end
+/// of the buffer.
 ///
 /// # Arguments
 ///
@@ -138,7 +108,6 @@ fn compose_http_response(
 }
 
 async fn read_stream_into(buffer: &mut [u8], stream: &mut TcpStream) -> Result<usize> {
-    // try to read data from remote into buffer
     let result_timeout = tokio::time::timeout(Duration::from_secs(1), stream.read(buffer)).await;
 
     let result_read = match result_timeout {
@@ -160,9 +129,9 @@ async fn read_stream_into(buffer: &mut [u8], stream: &mut TcpStream) -> Result<u
     Ok(bytes_read)
 }
 
-async fn handle_connection(stream: &mut TcpStream) -> Result<(), tokio::io::Error> {
+async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     let request_header_limit_bytes = 4096;
-    let request_headers: Vec<u8>;
+    let request_headers: &[u8];
     let request_body: Vec<u8>;
     let bytes_body_read: usize = 0;
     let mut request_data: Vec<u8> = Vec::with_capacity(BUFFER_SIZE);
@@ -172,12 +141,10 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<(), tokio::io::Erro
     loop {
         let mut buffer = [0; BUFFER_SIZE];
 
-        // read into buffer
         let Ok(bytes_read) = read_stream_into(&mut buffer, stream).await
             else { return Ok(()) };
         let buffer_trimmed = buffer.get(..bytes_read).unwrap_or_default();
 
-        // check header read limit
         // FIXME: headers might end within the current buffer, this is not checked
         if request_data.len() + buffer_trimmed.len() >= request_header_limit_bytes {
             warn!("Worker: request header size limit of {header_limit_bytes} has been exceeded. Aborting connection...",
@@ -187,44 +154,18 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<(), tokio::io::Erro
 
         if let Some(end_of_headers_byte_index) = bytes_contain_end_of_http_headers(&buffer) {
             request_headers_byte_index_end = request_data.len() + end_of_headers_byte_index;
+            // TODO: reading headers is complete. finishing up and the break out of loop.
+
+            request_data.extend(buffer.get(..end_of_headers_byte_index).unwrap_or_default());
+            request_headers = request_data.as_slice();
+
+            break;
         }
 
-        // add buffer to request_data
         request_data.extend(buffer_trimmed);
-
-        // read bytes from buffer into string
-        let buffer_string = String::from_utf8_lossy(buffer_trimmed);
-
-        let request_str = String::from_utf8_lossy(request_data.as_slice());
-
-        match bytes_contain_end_of_http_headers(&buffer) {
-            None => println!("foo"),
-            Some(byte_index) => println!("foo"),
-        };
-
-        //         match contains_end_of_http_headers(&request_str) {
-        //             None => {
-        //                 if request_data.len() >= request_header_limit_bytes {
-        //                     warn!("Worker: request header size limit of
-        // {header_limit_bytes} has been exceeded. Aborting connection...",
-        //                         header_limit_bytes =
-        // request_header_limit_bytes);                     return
-        // Ok(());                 }
-        //             }
-        //             Some(end_of_headers_byte_index) => {
-        //                 request_headers = request_str
-        //                     .get(..end_of_headers_byte_index)
-        //                     .unwrap_or_default()
-        //                     .to_string();
-        //                 request_body = request_str
-        //                     .get(end_of_headers_byte_index + 4..)
-        //                     .unwrap_or_default()
-        //                     .to_string();
-        //                 break;
-        //                 // TODO: read rest of body
-        //             }
-        //         }
     }
+
+    // TODO: read request body and determined if the body sould also be fetched.
 
     let request_headers = String::new();
     let request_body = String::new();
@@ -255,49 +196,53 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<(), tokio::io::Erro
         request = request_headers.lines().take(1).collect::<String>()
     );
 
-    //     if !request_headers.starts_with("GET") {
-    //         let status_code = 501;
-    //         let status_message = "Method Not Implemented";
-    //         let body = "501 - Method Not Implemented\n";
-    //         let response_headers =
-    //             compose_http_response_headers(body.len(), "text/plain;
-    // charset=utf-8");         let response =
-    //             compose_http_response(status_code, status_message,
-    // response_headers.as_str(), body);
-    //
-    //         let _ = stream.write(response.as_bytes()).await.unwrap();
-    //         stream.flush().await.unwrap();
-    //         return Ok(());
-    //     }
-    //
-    //     let mut files = HashMap::new();
-    //     if Path::new("index.html").exists() {
-    //         let mut contents = String::new();
-    //         File::open("index.html")
-    //             .unwrap()
-    //             .read_to_string(&mut contents)
-    //             .unwrap();
-    //         files.insert(String::from("/index.html"), contents);
-    //     }
-    //
-    //     let mut status_code = 404;
-    //     let mut status_message = "Not Found";
-    //     let mut body = String::from("Not Found");
-    //     if let Some(x) = files.get("/index.html") {
-    //         body = x.into();
-    //         status_code = 200;
-    //         status_message = "OK";
-    //     }
-    //
-    //     let response_headers = compose_http_response_headers(body.len(),
-    // "text/html; charset=utf-8");     let response = compose_http_response(
-    //         status_code,
-    //         status_message,
-    //         response_headers.as_str(),
-    //         body.as_str(),
-    //     );
-    //
-    //     let _ = stream.write(response.as_bytes()).await.unwrap();
+    if !request_headers.starts_with("GET") {
+        let status_code = 501;
+        let status_message = "Method Not Implemented";
+        let body = "501 - Method Not Implemented\n";
+        let response_headers = compose_http_response_headers(
+            body.len(),
+            "text/plain;
+    charset=utf-8",
+        );
+        let response =
+            compose_http_response(status_code, status_message, response_headers.as_str(), body);
+
+        let _ = stream.write(response.as_bytes()).await.unwrap();
+        stream.flush().await.unwrap();
+        return Ok(());
+    }
+
+    let mut files = HashMap::new();
+    if Path::new("index.html").exists() {
+        let mut contents = String::new();
+        tokio::fs::File::open("index.html")
+            .await
+            .expect(r#"Unable to open file "index.html" for reading"#)
+            .read_to_string(&mut contents)
+            .await
+            .expect(r#"error while reading "index.html" into a `String` type"#);
+        files.insert(String::from("/index.html"), contents);
+    }
+
+    let mut status_code = 404;
+    let mut status_message = "Not Found";
+    let mut body = String::from("Not Found");
+    if let Some(x) = files.get("/index.html") {
+        body = x.into();
+        status_code = 200;
+        status_message = "OK";
+    }
+
+    let response_headers = compose_http_response_headers(body.len(), "text/html; charset=utf-8");
+    let response = compose_http_response(
+        status_code,
+        status_message,
+        response_headers.as_str(),
+        body.as_str(),
+    );
+
+    let _ = stream.write(response.as_bytes()).await.unwrap();
     Ok(())
 }
 
