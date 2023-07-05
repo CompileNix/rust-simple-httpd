@@ -47,10 +47,10 @@ fn new_date_time_http_rfc() -> String {
 #[must_use]
 fn compose_http_response_headers(content_len: usize, content_type: &str) -> String {
     let headers = formatdoc! {"
-        Content-Length: {content_len}\r
-        Connection: Close\r
-        Date: {date}\r
-        Content-Type: {content_type}",
+        date: {date}\r
+        content-type: {content_type}\r
+        content-length: {content_len}\r
+        connection: close",
         date = new_date_time_http_rfc(),
     };
     headers
@@ -106,7 +106,9 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     loop {
         let mut buffer = [0; BUFFER_SIZE];
 
-        let Ok(bytes_read) = read_stream_into(&mut buffer, stream).await else { return Ok(()) };
+        let Ok(bytes_read) = read_stream_into(&mut buffer, stream).await else {
+            return Ok(());
+        };
         if bytes_read == 0 {
             break;
         }
