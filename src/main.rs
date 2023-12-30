@@ -23,6 +23,7 @@ use tokio::sync::Semaphore;
 use tokio::time::Duration;
 
 const BUFFER_SIZE: usize = 32;
+const REQUEST_HEADER_LIMIT_BYTES: usize = 4096;
 const TIME_FORMAT_VERSION: usize = 2;
 // const STREAM_READ_INTO_BUFFER_TIMEOUT: Duration = Duration::from_millis(500);
 const STREAM_READ_INTO_BUFFER_TIMEOUT: Duration = Duration::from_secs(3600);
@@ -199,56 +200,23 @@ async fn send_basic_status_response(
     stream.flush().await.unwrap();
 }
 
-/// Asynchronously reads and processes the headers of a HTTP request from a TCP stream.
-///
-/// This function continually reads data from the given TCP stream into a fixed-size buffer,
-/// appending each non-empty, non-null segment of data to `request_data` until it either
-/// finds the end-of-headers marker (`\r\n\r\n`), reaches a specified byte limit for the headers,
-/// or determines that the request headers are incomplete or too small.
-///
-/// # Arguments
-///
-/// * `buffer` - A fixed-size byte array used for reading data from the stream.
-/// * `stream` - A mutable reference to the `TcpStream` from which data is read.
-/// * `request_data` - A `Vec<u8>` that accumulates the request data.
-/// * `request_header_limit_bytes` - The maximum allowed size of the request headers in bytes.
-/// * `request_header_limit_bytes_exeeded` - A mutable boolean flag set to `true` if the headers exceed the byte limit.
-/// * `request_smaller_then_4_bytes` - A mutable boolean flag set to `true` if the headers are smaller than 4 bytes.
-/// * `request_headers` - A mutable slice of bytes representing the request headers.
-/// * `request_body_byte_index_start` - A mutable index marking the start of the request body.
-/// * `request_header_incomplete` - A mutable boolean flag set to `true` if the request headers are incomplete.
-///
-/// # Returns
-///
-/// Returns an `Option<Result<(), anyhow::Error>>`:
-/// - `Some(Ok(()))` - If the headers are successfully read and processed.
-/// - `None` - If an error occured while reading from the stream or processing the data.
-///
-/// # Errors
-///
-/// This function can return `None` in various scenarios, such as if there's an issue with reading the stream,
-/// if the input buffer cannot be trimmed, or if the headers are too small or incomplete.
-///
-/// # Notes
-///
-/// - The function uses a loop to continually read from the TCP stream and checks for the end-of-headers marker.
-/// - The function sets various flags (`request_header_limit_bytes_exeeded`, `request_smaller_then_4_bytes`, `request_header_incomplete`) to indicate specific conditions encountered during processing.
-async fn try_read_request_headers(
-    mut buffer: [u8; 32],
-    stream: &mut TcpStream,
-    mut request_data: Vec<u8>,
-    request_header_limit_bytes: usize,
-    request_header_limit_bytes_exeeded: &mut bool,
-    request_smaller_then_4_bytes: &mut bool,
-    mut request_headers: &[u8],
-    mut request_body_byte_index_start: usize,
-    request_header_incomplete: &mut bool,
-) -> Option<std::prelude::v1::Result<(), anyhow::Error>> {
+async fn handle_connection(stream: &mut TcpStream) {
+    let mut request_headers: &[u8] = &[0u8];
+    let request_body: Vec<u8>;
+    let bytes_body_read: usize = 0;
+    let mut request_data: Vec<u8> = Vec::with_capacity(BUFFER_SIZE);
+    let request_body_byte_index_start;
+    let mut buffer = [0; BUFFER_SIZE];
+    let mut request_header_limit_bytes_exeeded = false;
+    let mut request_smaller_then_4_bytes = false;
+    let mut request_header_incomplete = false;
+
+    // Reading request headers
     loop {
         // Read into buffer
         let Ok(bytes_read) = read_stream_into(&mut buffer, stream).await else {
             warn!("reading the stream failed, so we are going to bail out of this conneciton");
-            return None;
+            return;
         };
 
         // Trim null bytes, in case the buffer wasn't filled
@@ -256,14 +224,14 @@ async fn try_read_request_headers(
             Some(bytes) => bytes,
             None => {
                 warn!("We could not trimm the input buffer. The buffer has a length of {BUFFER_SIZE} and we got {bytes_read} bytes.");
-                return None;
+                return;
             }
         };
 
-        // Check if request_header_limit_bytes has been exeeded
+        // Check if REQUEST_HEADER_LIMIT_BYTES has been exeeded
         // FIXME: headers might end within the current buffer, this is not checked
-        if request_data.len() + buffer_trimmed.len() >= request_header_limit_bytes {
-            *request_header_limit_bytes_exeeded = true;
+        if request_data.len() + buffer_trimmed.len() >= REQUEST_HEADER_LIMIT_BYTES {
+            request_header_limit_bytes_exeeded = true;
             break;
         }
 
@@ -272,7 +240,7 @@ async fn try_read_request_headers(
         let maybe_eoh_byte_index = match bytes_contain_eoh(request_data.as_slice()) {
             Ok(result) => result,
             Err(_error) => {
-                *request_smaller_then_4_bytes = true;
+                request_smaller_then_4_bytes = true;
                 break;
             }
         };
@@ -284,61 +252,27 @@ async fn try_read_request_headers(
 
         // since we haven't found the end-of-headers marker (\\r\\n\\r\\n), the request can't be valid / complete
         if bytes_read == 0 || bytes_read < BUFFER_SIZE {
-            *request_header_incomplete = true;
+            request_header_incomplete = true;
             break;
         }
     }
-    Some(Ok(()))
-}
 
-async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
-    let request_header_limit_bytes = 4096;
-    let mut request_headers: &[u8] = &[0u8];
-    let request_body: Vec<u8>;
-    let bytes_body_read: usize = 0;
-    let mut request_data: Vec<u8> = Vec::with_capacity(BUFFER_SIZE);
-    let request_body_byte_index_start = 0;
-    let mut buffer = [0; BUFFER_SIZE];
-    let mut request_header_limit_bytes_exeeded = false;
-    let mut request_smaller_then_4_bytes = false;
-    let mut request_header_incomplete = false;
-
-    if let None = try_read_request_headers(
-        buffer,
-        stream,
-        request_data,
-        request_header_limit_bytes,
-        &mut request_header_limit_bytes_exeeded,
-        &mut request_smaller_then_4_bytes,
-        request_headers,
-        request_body_byte_index_start,
-        &mut request_header_incomplete,
-    )
-    .await
-    {
-        // We got back a `None` from `try_read_request_headers`,
-        // so we know there was at least one critical error
-        // where we can't continue and may don't even be able to
-        // send a HTTP 400 Bad Request back.
-        // The connection just get's dropped entirely.
-        return Ok(());
-    }
-
-    // Check for non-critical errors, after header reading is complete
     if request_header_incomplete {
         warn!("Since we haven't found the \"\\r\\n\\r\\n\" marker but the remote indicated that they are done sending data we can conclude that the request must be incomplete because all http requests must contain the \"\\r\\n\\r\\n\" sequence at least once.");
         send_basic_status_response(stream, 400, "Bad Request").await;
-        return Ok(());
+        return;
     }
+
     if request_smaller_then_4_bytes {
         warn!("We received less then 4 bytes in total, which cant be a valid request. Aborting connection...");
         send_basic_status_response(stream, 400, "Bad Request").await;
-        return Ok(());
+        return;
     }
+
     if request_header_limit_bytes_exeeded {
-        warn!("Request header size limit of {request_header_limit_bytes} has been exceeded. Aborting connection...");
+        warn!("Request header size limit of {REQUEST_HEADER_LIMIT_BYTES} has been exceeded. Aborting connection...");
         send_basic_status_response(stream, 400, "Bad Request").await;
-        return Ok(());
+        return;
     }
 
     //print!("{:02X?}\n", request_data);
@@ -357,17 +291,8 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     // file.write_all(request_body.as_bytes()).unwrap();
 
     if bytes_body_read >= 50_000_000 {
-        let status_code = 413;
-        let status_message = "Payload Too Large";
-        let body = "413 - Payload Too Large\n";
-        let response_headers =
-            compose_http_response_headers(body.len(), "text/plain; charset=utf-8");
-        let response =
-            compose_http_response(status_code, status_message, response_headers.as_str(), body);
-
-        let _ = stream.write(response.as_bytes()).await.unwrap();
-        stream.flush().await.unwrap();
-        return Ok(());
+        send_basic_status_response(stream, 413, "Payload To Large").await;
+        return;
     }
 
     //debug!(
@@ -424,7 +349,6 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     );
 
     let _ = stream.write(response.as_bytes()).await.unwrap();
-    Ok(())
 }
 
 #[tokio::main]
@@ -459,7 +383,7 @@ async fn main() -> Result<()> {
         trace!("Wohoo, we got a new connection from {socket_addr} 🙌");
 
         tokio::spawn(async move {
-            handle_connection(&mut stream).await.unwrap();
+            handle_connection(&mut stream).await;
             trace!("We are done with a request from {socket_addr}");
             drop(permit);
         });
