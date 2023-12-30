@@ -16,22 +16,110 @@ use std::path::Path;
 use std::process;
 use std::sync::Arc;
 use std::thread;
+use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 use tokio::time::Duration;
 
+
 const BUFFER_SIZE: usize = 32;
 const TIME_FORMAT_VERSION: usize = 2;
+// const STREAM_READ_INTO_BUFFER_TIMEOUT: Duration = Duration::from_millis(500);
+const STREAM_READ_INTO_BUFFER_TIMEOUT: Duration = Duration::from_secs(3600);
 
-fn bytes_contain_eoh(content: &[u8]) -> Option<usize> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_full_example() {
+        let array = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBody";
+        assert_eq!(bytes_contain_eoh(array).unwrap(), Some(41));
+    }
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_not() {
+        let array: [u8; 32] = [0; 32];
+        assert_eq!(bytes_contain_eoh(&array).unwrap(), None);
+    }
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_at_end() {
+        let mut array: [u8; 32] = [0; 32];
+        array[28..32].copy_from_slice(b"\r\n\r\n");
+        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(28));
+    }
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_in_middle() {
+        let mut array: [u8; 32] = [0; 32];
+        array[9..13].copy_from_slice(b"\r\n\r\n");
+        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(9));
+    }
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_multiple() {
+        let mut array: [u8; 32] = [0; 32];
+        array[28..32].copy_from_slice(b"\r\n\r\n");
+        array[9..13].copy_from_slice(b"\r\n\r\n");
+        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(9));
+    }
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_at_begin() {
+        let mut array: [u8; 32] = [0; 32];
+        array[0..4].copy_from_slice(b"\r\n\r\n");
+        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(0));
+    }
+
+    #[test]
+    fn test_bytes_contain_end_of_http_headers_partial() {
+        let mut array: [u8; 32] = [0; 32];
+        array[0..2].copy_from_slice(b"\r\n");
+        assert_eq!(bytes_contain_eoh(&array).unwrap(), None);
+    }
+}
+
+/// Searches for the first occurrence of a specific byte sequence in a given slice of bytes.
+///
+/// This function is specifically designed to find the end-of-header (EOH) marker in HTTP
+/// headers, which is represented by the byte sequence "\r\n\r\n". It iterates over the slice
+/// and checks for the presence of this sequence.
+///
+/// # Arguments
+///
+/// * `content` - A slice of bytes (`&[u8]`) in which to search for the EOH marker.
+///
+/// # Returns
+///
+/// Returns an `Option<usize>`:
+/// - `Some(usize)` - If the EOH marker is found, returns the index at which the marker begins.
+/// - `None` - If the EOH marker is not found in the given byte slice.
+///
+/// # Panics
+///
+/// This function panics if the slice's length is less than 4 bytes, which is the length of the EOH marker.
+///
+/// # Examples
+///
+/// ```
+/// let data = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBody";
+/// let index = bytes_contain_eoh(data);
+/// assert_eq!(index, Some(41));
+/// ```
+///
+/// # Notes
+///
+/// This function is optimized for searching small slices, typical of HTTP header sizes.
+/// For very large slices, consider using more efficient string searching algorithms.
+fn bytes_contain_eoh(content: &[u8]) -> Result<Option<usize>, String> {
     let target = b"\r\n\r\n";
-    (0..=(content.len() - target.len())).find(|&i| {
-        content
-            .get(i..i + target.len())
-            .expect("input slice must be larger than 4 bytes")
-            == target
-    })
+    if content.len() < target.len() {
+        return Err("Input slice is smaller than target sequence length".into());
+    }
+
+    Ok((0..=(content.len() - target.len())).find(|&i| content[i..i + target.len()] == *target))
 }
 
 #[must_use]
@@ -56,7 +144,6 @@ fn compose_http_response_headers(content_len: usize, content_type: &str) -> Stri
     headers
 }
 
-// TODO: make body optional and add write_body function
 #[must_use]
 fn compose_http_response(
     status_code: u16,
@@ -74,7 +161,7 @@ fn compose_http_response(
 
 async fn read_stream_into(buffer: &mut [u8], stream: &mut TcpStream) -> Result<usize> {
     let result_timeout =
-        tokio::time::timeout(Duration::from_millis(500), stream.read(buffer)).await;
+        tokio::time::timeout(STREAM_READ_INTO_BUFFER_TIMEOUT, stream.read(buffer)).await;
 
     let result_read = match result_timeout {
         Ok(result_read) => result_read,
@@ -95,6 +182,24 @@ async fn read_stream_into(buffer: &mut [u8], stream: &mut TcpStream) -> Result<u
     Ok(bytes_read)
 }
 
+async fn send_basic_status_response(
+    stream: &mut TcpStream,
+    status_code: u16,
+    status_message: &str,
+) {
+    let body = format!("{status_message}\n");
+    let response_headers = compose_http_response_headers(body.len(), "text/plain; charset=utf-8");
+    let response = compose_http_response(
+        status_code,
+        status_message,
+        response_headers.as_str(),
+        &body,
+    );
+
+    let _ = stream.write(response.as_bytes()).await.unwrap();
+    stream.flush().await.unwrap();
+}
+
 async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     let request_header_limit_bytes = 4096;
     let mut request_headers: &[u8] = &[0u8];
@@ -102,31 +207,68 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
     let bytes_body_read: usize = 0;
     let mut request_data: Vec<u8> = Vec::with_capacity(BUFFER_SIZE);
     let request_body_byte_index_start;
+    let mut buffer = [0; BUFFER_SIZE];
+    let mut request_header_limit_bytes_exeeded = false;
+    let mut request_smaller_then_4_bytes = false;
+    let mut request_header_incomplete = false;
 
     loop {
-        let mut buffer = [0; BUFFER_SIZE];
-
         let Ok(bytes_read) = read_stream_into(&mut buffer, stream).await else {
+            warn!("reading the stream failed, so we are going to bail out of this conneciton");
             return Ok(());
         };
-        if bytes_read == 0 {
-            break;
-        }
-        let buffer_trimmed = buffer.get(..bytes_read).unwrap();
+
+        let buffer_trimmed = match buffer.get(..bytes_read) {
+            Some(bytes) => bytes,
+            None => {
+                warn!("We could not trimm the input buffer. The buffer has a length of {BUFFER_SIZE} and we got {bytes_read} bytes.");
+                return Ok(());
+            }
+        };
 
         // FIXME: headers might end within the current buffer, this is not checked
         if request_data.len() + buffer_trimmed.len() >= request_header_limit_bytes {
-            warn!("Worker: request header size limit of {header_limit_bytes} has been exceeded. Aborting connection...", header_limit_bytes = request_header_limit_bytes);
-            return Ok(());
+            request_header_limit_bytes_exeeded = true;
+            break;
         }
 
         request_data.extend(buffer_trimmed);
-        if let Some(eoh_byte_index) = bytes_contain_eoh(request_data.as_slice()) {
-            // TODO: reading headers is complete. finishing up and the break out of loop.
+        let maybe_eoh_byte_index = match bytes_contain_eoh(request_data.as_slice()) {
+            Ok(result) => result,
+            Err(_error) => {
+                request_smaller_then_4_bytes = true;
+                break;
+            }
+        };
+        if let Some(eoh_byte_index) = maybe_eoh_byte_index {
             request_headers = request_data.get(..eoh_byte_index).unwrap();
-            request_body_byte_index_start = eoh_byte_index + 4;
+            request_body_byte_index_start = eoh_byte_index + 4; // +4 to skip over the \r\n\r\n at the end
             break;
         }
+
+        if bytes_read == 0 || bytes_read < BUFFER_SIZE {
+            // since we haven't found the end-of-headers marker (\\r\\n\\r\\n)
+            request_header_incomplete = true;
+            break;
+        }
+    }
+
+    if request_header_incomplete {
+        warn!("Since we haven't found the \"\\r\\n\\r\\n\" marker but the remote indicated that they are done sending data we can conclude that the request must be incomplete because all http requests must contain the \"\\r\\n\\r\\n\" sequence at least once.");
+        send_basic_status_response(stream, 400, "Bad Request").await;
+        return Ok(());
+    }
+
+    if request_smaller_then_4_bytes {
+        warn!("We received less then 4 bytes in total, which cant be a valid request. Aborting connection...");
+        send_basic_status_response(stream, 400, "Bad Request").await;
+        return Ok(());
+    }
+
+    if request_header_limit_bytes_exeeded {
+        warn!("Request header size limit of {request_header_limit_bytes} has been exceeded. Aborting connection...");
+        send_basic_status_response(stream, 400, "Bad Request").await;
+        return Ok(());
     }
 
     //print!("{:02X?}\n", request_data);
@@ -134,13 +276,13 @@ async fn handle_connection(stream: &mut TcpStream) -> Result<()> {
 
     // TODO: read request body and determined if the body sould also be fetched.
 
-    let request_headers = String::new();
+    let request_headers = String::from_utf8_lossy(request_headers);
     let request_body = String::new();
 
-    trace!("Worker: Print request headers:\n{request_headers}");
-    // let mut file = File::create("request_headers.txt").unwrap();
-    // file.write_all(request_headers.as_bytes()).unwrap();
-    trace!("Worker: Print request body:\n{request_body}");
+    trace!("Request headers:\n{request_headers}");
+    let mut file = File::create("request_headers.txt").await.unwrap();
+    file.write_all(request_headers.as_bytes()).await.unwrap();
+    trace!("Request body:\n{request_body}");
     // let mut file = File::create("request_body.txt").unwrap();
     // file.write_all(request_body.as_bytes()).unwrap();
 
@@ -241,60 +383,15 @@ async fn main() -> Result<()> {
     let semaphore = Arc::new(Semaphore::new(worker_count));
 
     loop {
-        let (mut stream, _) = listener.accept().await?;
+        let (mut stream, socket_addr) = listener.accept().await?;
         let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
+
+        trace!("Wohoo, we got a new connection from {socket_addr} 🙌");
 
         tokio::spawn(async move {
             handle_connection(&mut stream).await.unwrap();
+            trace!("We are done with a request from {socket_addr}");
             drop(permit);
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use indoc::indoc;
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_not() {
-        let array: [u8; 32] = [0; 32];
-        assert_eq!(bytes_contain_eoh(&array), None);
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_at_end() {
-        let mut array: [u8; 32] = [0; 32];
-        array[28..32].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array), Some(28));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_in_middle() {
-        let mut array: [u8; 32] = [0; 32];
-        array[9..13].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array), Some(9));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_multiple() {
-        let mut array: [u8; 32] = [0; 32];
-        array[28..32].copy_from_slice(b"\r\n\r\n");
-        array[9..13].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array), Some(9));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_at_begin() {
-        let mut array: [u8; 32] = [0; 32];
-        array[0..4].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array), Some(0));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_partial() {
-        let mut array: [u8; 32] = [0; 32];
-        array[0..2].copy_from_slice(b"\r\n");
-        assert_eq!(bytes_contain_eoh(&array), None);
     }
 }
