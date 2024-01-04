@@ -312,7 +312,14 @@ async fn main() {
         .spawn(move || {
             let mut signals = Signals::new([SIGINT, SIGQUIT]).unwrap();
             if let Some(sig) = signals.forever().next() {
-                info!("Received process signal {sig:?}");
+                let mut signal_text = format!("{sig}");
+                if sig == SIGINT {
+                    signal_text = "SIGINT".into();
+                }
+                if sig == SIGQUIT {
+                    signal_text = "SIGQUIT".into();
+                }
+                info!("Received process signal {signal_text}");
                 process::exit(0);
             }
         });
