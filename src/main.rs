@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use env_logger::Env;
 use indoc::formatdoc;
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;
 use std::collections::HashMap;
@@ -29,57 +29,7 @@ const TIME_FORMAT_VERSION: usize = 2;
 const STREAM_READ_INTO_BUFFER_TIMEOUT: Duration = Duration::from_secs(3600);
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_full_example() {
-        let array = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nBody";
-        assert_eq!(bytes_contain_eoh(array).unwrap(), Some(41));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_not() {
-        let array: [u8; 32] = [0; 32];
-        assert_eq!(bytes_contain_eoh(&array).unwrap(), None);
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_at_end() {
-        let mut array: [u8; 32] = [0; 32];
-        array[28..32].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(28));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_in_middle() {
-        let mut array: [u8; 32] = [0; 32];
-        array[9..13].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(9));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_multiple() {
-        let mut array: [u8; 32] = [0; 32];
-        array[28..32].copy_from_slice(b"\r\n\r\n");
-        array[9..13].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(9));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_at_begin() {
-        let mut array: [u8; 32] = [0; 32];
-        array[0..4].copy_from_slice(b"\r\n\r\n");
-        assert_eq!(bytes_contain_eoh(&array).unwrap(), Some(0));
-    }
-
-    #[test]
-    fn test_bytes_contain_end_of_http_headers_partial() {
-        let mut array: [u8; 32] = [0; 32];
-        array[0..2].copy_from_slice(b"\r\n");
-        assert_eq!(bytes_contain_eoh(&array).unwrap(), None);
-    }
-}
+mod tests;
 
 /// Searches for the first occurrence of a specific byte sequence in a given slice of bytes.
 ///
@@ -94,12 +44,8 @@ mod tests {
 /// # Returns
 ///
 /// Returns an `Option<usize>`:
-/// - `Some(usize)` - If the EOH marker is found, returns the index at which the marker begins.
-/// - `None` - If the EOH marker is not found in the given byte slice.
-///
-/// # Panics
-///
-/// This function panics if the slice's length is less than 4 bytes, which is the length of the EOH marker.
+/// - `Some(usize)` - If the EOH marker is found, returns the index at which the marker begins, else returns a `None`.
+/// - `None` - If the EOH marker is not found or the the given byte slice is smaller than the EOH marker.
 ///
 /// # Examples
 ///
@@ -108,18 +54,20 @@ mod tests {
 /// let index = bytes_contain_eoh(data);
 /// assert_eq!(index, Some(41));
 /// ```
-///
-/// # Notes
-///
-/// This function is optimized for searching small slices, typical of HTTP header sizes.
-/// For very large slices, consider using more efficient string searching algorithms.
-fn bytes_contain_eoh(content: &[u8]) -> Result<Option<usize>, String> {
-    let target = b"\r\n\r\n";
-    if content.len() < target.len() {
-        return Err("Input slice is smaller than target sequence length".into());
+fn bytes_contain_eoh(content: &[u8]) -> Option<usize> {
+    let eoh_sequence = b"\r\n\r\n"; // 0x0d, 0x0a, 0x0d, 0x0a
+
+    if content.len() < eoh_sequence.len() {
+        return None;
     }
 
-    Ok((0..=(content.len() - target.len())).find(|&i| content[i..i + target.len()] == *target))
+    // Search for the EOH sequence in the content
+    let position = content
+        .windows(eoh_sequence.len())
+        .position(|window| window == eoh_sequence);
+
+    // Return the position found, or None if not found
+    position
 }
 
 #[must_use]
@@ -135,6 +83,7 @@ fn new_date_time_http_rfc() -> String {
 #[must_use]
 fn compose_http_response_headers(content_len: usize, content_type: &str) -> String {
     let headers = formatdoc! {"
+        server: rust-simple-httpd\r
         date: {date}\r
         content-type: {content_type}\r
         content-length: {content_len}\r
@@ -179,6 +128,12 @@ async fn read_stream_into(buffer: &mut [u8], stream: &mut TcpStream) -> Result<u
         }
     };
 
+    trace!(
+        "stream.read(buffer({})): returned {} bytes",
+        buffer.len(),
+        bytes_read
+    );
+
     Ok(bytes_read)
 }
 
@@ -196,8 +151,8 @@ async fn send_basic_status_response(
         &body,
     );
 
-    let _ = stream.write(response.as_bytes()).await.unwrap();
-    stream.flush().await.unwrap();
+    let _ = stream.write(response.as_bytes()).await;
+    stream.flush().await.ok();
 }
 
 async fn handle_connection(stream: &mut TcpStream) {
@@ -207,44 +162,42 @@ async fn handle_connection(stream: &mut TcpStream) {
     let mut request_data: Vec<u8> = Vec::with_capacity(BUFFER_SIZE);
     let request_body_byte_index_start;
     let mut buffer = [0; BUFFER_SIZE];
-    let mut request_header_limit_bytes_exeeded = false;
-    let mut request_smaller_then_4_bytes = false;
+    let mut request_header_limit_bytes_exceeded = false;
     let mut request_header_incomplete = false;
 
     // Reading request headers
+    trace!("begin reading stream into buffer until EOH");
+    trace!("EOH sequence is \"\\r\\n\\r\\n\" (0x0d, 0x0a, 0x0d, 0x0a)");
     loop {
         // Read into buffer
         let Ok(bytes_read) = read_stream_into(&mut buffer, stream).await else {
-            warn!("reading the stream failed, so we are going to bail out of this conneciton");
+            warn!("reading the stream failed, so we are going to bail out of this connection");
             return;
         };
+
+        // EOH marker is: 0x0d, 0x0a, 0x0d, 0x0a
+        trace!("buffer data: {:02x?}", &buffer);
 
         // Trim null bytes, in case the buffer wasn't filled
         let buffer_trimmed = match buffer.get(..bytes_read) {
             Some(bytes) => bytes,
             None => {
-                warn!("We could not trimm the input buffer. The buffer has a length of {BUFFER_SIZE} and we got {bytes_read} bytes.");
+                warn!("We could not trim the input buffer. The buffer has a length of {BUFFER_SIZE} and we got {bytes_read} bytes.");
                 return;
             }
         };
 
-        // Check if REQUEST_HEADER_LIMIT_BYTES has been exeeded
+        // Check if REQUEST_HEADER_LIMIT_BYTES has been exceeded
         // FIXME: headers might end within the current buffer, this is not checked
         if request_data.len() + buffer_trimmed.len() >= REQUEST_HEADER_LIMIT_BYTES {
-            request_header_limit_bytes_exeeded = true;
+            request_header_limit_bytes_exceeded = true;
             break;
         }
 
-        // appand buffer to request_data and check if the client is done with sending request headers
+        // append buffer to request_data and check if the client is done with sending request headers
         request_data.extend(buffer_trimmed);
-        let maybe_eoh_byte_index = match bytes_contain_eoh(request_data.as_slice()) {
-            Ok(result) => result,
-            Err(_error) => {
-                request_smaller_then_4_bytes = true;
-                break;
-            }
-        };
-        if let Some(eoh_byte_index) = maybe_eoh_byte_index {
+        if let Some(eoh_byte_index) = bytes_contain_eoh(request_data.as_slice()) {
+            trace!("EOH sequence found at {eoh_byte_index}");
             request_headers = request_data.get(..eoh_byte_index).unwrap();
             request_body_byte_index_start = eoh_byte_index + 4; // +4 to skip over the \r\n\r\n at the end
             break;
@@ -256,6 +209,7 @@ async fn handle_connection(stream: &mut TcpStream) {
             break;
         }
     }
+    buffer.fill(0);
 
     if request_header_incomplete {
         warn!("Since we haven't found the \"\\r\\n\\r\\n\" marker but the remote indicated that they are done sending data we can conclude that the request must be incomplete because all http requests must contain the \"\\r\\n\\r\\n\" sequence at least once.");
@@ -263,13 +217,7 @@ async fn handle_connection(stream: &mut TcpStream) {
         return;
     }
 
-    if request_smaller_then_4_bytes {
-        warn!("We received less then 4 bytes in total, which cant be a valid request. Aborting connection...");
-        send_basic_status_response(stream, 400, "Bad Request").await;
-        return;
-    }
-
-    if request_header_limit_bytes_exeeded {
+    if request_header_limit_bytes_exceeded {
         warn!("Request header size limit of {REQUEST_HEADER_LIMIT_BYTES} has been exceeded. Aborting connection...");
         send_basic_status_response(stream, 400, "Bad Request").await;
         return;
@@ -278,7 +226,7 @@ async fn handle_connection(stream: &mut TcpStream) {
     //print!("{:02X?}\n", request_data);
     //io::stdout().flush().unwrap();
 
-    // TODO: read request body and determined if the body sould also be fetched.
+    // TODO: read request body and determined if the body should also be fetched.
 
     let request_headers = String::from_utf8_lossy(request_headers);
     let request_body = String::new();
@@ -352,7 +300,7 @@ async fn handle_connection(stream: &mut TcpStream) {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .format_target(false)
@@ -363,28 +311,50 @@ async fn main() -> Result<()> {
         .name("ProcessSignalHandler".into())
         .spawn(move || {
             let mut signals = Signals::new([SIGINT, SIGQUIT]).unwrap();
-            for sig in signals.forever() {
+            if let Some(sig) = signals.forever().next() {
                 info!("Received process signal {sig:?}");
                 process::exit(0);
             }
         });
 
-    let worker_count = num_cpus::get();
-
     let bind_addr = "127.0.0.1:8000";
+    let listener = TcpListener::bind(bind_addr)
+        .await
+        .expect(format!("Can't bind to {bind_addr}").as_str());
     info!("listening on {bind_addr}");
-    let listener = TcpListener::bind(bind_addr).await?;
+
+    let worker_count = num_cpus::get();
     let semaphore = Arc::new(Semaphore::new(worker_count));
 
     loop {
-        let (mut stream, socket_addr) = listener.accept().await?;
-        let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
+        let (mut stream, socket_addr) = match listener.accept().await {
+            Ok(accept) => accept,
+            Err(error) => {
+                warn!("Couldn't receive new connection from socket listener: {error:?}");
+                continue;
+            }
+        };
 
-        trace!("Wohoo, we got a new connection from {socket_addr} 🙌");
+        trace!("Alright, we got a new connection from {socket_addr}.");
+        trace!("Lets see if we have to wait for an available worker");
+        trace!(
+            "{0} of {worker_count} workers are available",
+            semaphore.available_permits()
+        );
+        trace!(
+            "We are going ahead with acquiring a permit, or waiting for one to become available"
+        );
+
+        let permit = Arc::clone(&semaphore)
+            .acquire_owned()
+            .await
+            .expect("Failed to receive permit from the semaphore");
+
+        debug!("Wohoo, we have a new request to process 🙌");
 
         tokio::spawn(async move {
             handle_connection(&mut stream).await;
-            trace!("We are done with a request from {socket_addr}");
+            debug!("We are done with a request from {socket_addr}");
             drop(permit);
         });
     }
