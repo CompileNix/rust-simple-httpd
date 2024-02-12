@@ -45,7 +45,7 @@ mod tests;
 ///
 /// Returns an `Option<usize>`:
 /// - `Some(usize)` - If the EOH marker is found, returns the index at which the marker begins, else returns a `None`.
-/// - `None` - If the EOH marker is not found or the the given byte slice is smaller than the EOH marker.
+/// - `None` - If the EOH marker is not found or the given byte slice is smaller than the EOH marker.
 ///
 /// # Examples
 ///
@@ -179,12 +179,9 @@ async fn handle_connection(stream: &mut TcpStream) {
         trace!("buffer data: {:02x?}", &buffer);
 
         // Trim null bytes, in case the buffer wasn't filled
-        let buffer_trimmed = match buffer.get(..bytes_read) {
-            Some(bytes) => bytes,
-            None => {
-                warn!("We could not trim the input buffer. The buffer has a length of {BUFFER_SIZE} and we got {bytes_read} bytes.");
-                return;
-            }
+        let Some(buffer_trimmed) = buffer.get(..bytes_read) else {
+            warn!("We could not trim the input buffer. The buffer has a length of {BUFFER_SIZE} and we got {bytes_read} bytes.");
+            return;
         };
 
         // Check if REQUEST_HEADER_LIMIT_BYTES has been exceeded
@@ -310,7 +307,8 @@ async fn main() {
     let _ = thread::Builder::new()
         .name("ProcessSignalHandler".into())
         .spawn(move || {
-            let mut signals = Signals::new([SIGINT, SIGQUIT]).unwrap();
+            let mut signals = Signals::new([SIGINT, SIGQUIT])
+                .expect("Error while initializing process signal trap");
             if let Some(sig) = signals.forever().next() {
                 let mut signal_text = format!("{sig}");
                 if sig == SIGINT {
@@ -327,7 +325,7 @@ async fn main() {
     let bind_addr = "127.0.0.1:8000";
     let listener = TcpListener::bind(bind_addr)
         .await
-        .expect(format!("Can't bind to {bind_addr}").as_str());
+        .unwrap_or_else(|_| panic!("Can't bind to {bind_addr}"));
     info!("listening on {bind_addr}");
 
     let worker_count = num_cpus::get();
