@@ -9,11 +9,11 @@ color = []
 humantime = ["time/local-offset"]
 
 [dependencies]
-anyhow = "1.0"
-indoc = "2.0"
-log = "0.4"
-num_cpus = "1.15"
-signal-hook = "0.3"
-time = { version = "0.3", features = [ "formatting", "serde-well-known" ] }
-tokio = { version = "1.27", features = ["full"] }
+anyhow = "1"
+indoc = "2"
+log = "0"
+num_cpus = "1"
+signal-hook = "0"
+time = { version = "0", features = [ "formatting", "serde-well-known" ] }
+tokio = { version = "1", default-features = false, features = ["net", "io-util", "rt", "fs", "time", "sync", "tokio-macros", "macros", "rt-multi-thread"] }
 
