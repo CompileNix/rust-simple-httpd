@@ -2,7 +2,7 @@ use std::fmt;
 
 pub fn format_with_options(value: &impl fmt::Display, f: &mut fmt::Formatter) -> fmt::Result {
     if let Some(width) = f.width() {
-        let alignment = f.align().unwrap_or(fmt::Alignment::Right);
+        let alignment = f.align().unwrap_or(fmt::Alignment::Left);
 
         // Format output according to the width and alignment
         let formatted_value = match alignment {
