@@ -1,7 +1,7 @@
-use std::fmt;
-use std::fmt::Formatter;
 use crate::http_server::HttpServer;
 use crate::util;
+use std::fmt;
+use std::fmt::Formatter;
 
 // fn new_http_server() -> HttpServer {
 //     HttpServer { config: Config::default(), log: Logger { level: Level::Trace } }

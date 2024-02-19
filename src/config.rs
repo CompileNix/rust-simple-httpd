@@ -11,7 +11,7 @@ use std::fmt::format;
 use std::{env, fmt};
 use tokio::time::Duration;
 
-use crate::{util, log, Level, trace};
+use crate::{log, trace, util, Level};
 
 #[derive(Clone, Copy, Debug, Hash, Default)]
 pub struct Config {
@@ -37,8 +37,12 @@ impl Config {
         trace!(Level::Trace, "create default config from env vars");
         let mut config = Self::default();
 
+        // TODO: following code block is unpleasant to read
         let rust_log_key = "RUST_LOG";
-        trace!(Level::Trace, r#"discover config "log_level" from env var "{rust_log_key}""#);
+        trace!(
+            Level::Trace,
+            r#"discover config "log_level" from env var "{rust_log_key}""#
+        );
         if let Ok(rust_log) = env::var(rust_log_key) {
             trace!(Level::Trace, r#"env var "{rust_log_key}" exists"#);
             let parsed_log_level = Self::try_parse_log_level(rust_log.as_str());
@@ -46,10 +50,18 @@ impl Config {
             if let Ok(log_level) = parsed_log_level {
                 config.log_level = log_level;
             } else {
-                trace!(Level::Trace, r#"keep default log level of "{}""#, config.log_level);
+                trace!(
+                    Level::Trace,
+                    r#"keep default log level of "{}""#,
+                    config.log_level
+                );
             }
         } else {
-            trace!(Level::Trace, r#"keep default log level of "{}""#, config.log_level);
+            trace!(
+                Level::Trace,
+                r#"keep default log level of "{}""#,
+                config.log_level
+            );
         }
 
         config

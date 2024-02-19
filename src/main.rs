@@ -8,7 +8,7 @@ extern crate core;
 extern crate num_cpus;
 
 use crate::config::Config;
-use crate::log::{verb, info, debug, trace, warn, Level};
+use crate::log::{debug, info, trace, verb, warn, Level};
 
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;
