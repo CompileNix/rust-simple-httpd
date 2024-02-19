@@ -4,9 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["color"]
+default = ["log-verb", "color"]
 color = []
 humantime = ["time/local-offset"]
+log-err = []
+log-warn = ["log-err"]
+log-info = ["log-warn"]
+log-verb = ["log-info"]
+log-debug = ["log-verb"]
+log-trace = ["log-debug"]
 
 [dependencies]
 anyhow = "1"

@@ -12,8 +12,7 @@ use time::util::local_offset::Soundness;
 #[cfg(feature = "color")]
 use crate::color::Color;
 use crate::color::Colorize;
-use crate::log;
-use crate::util;
+use crate::{log, util};
 
 /// An enum representing the available verbosity levels of the logger.
 ///
@@ -147,9 +146,9 @@ fn new_log_message_prefix_text(level: Level) -> String {
         .unwrap_or_default();
 
     if cfg!(feature = "color") {
-        format!("[{time} {level:^14} ]")
+        format!("[{time} {level:<14} ]")
     } else {
-        format!("[{time} {level:^5} ]")
+        format!("[{time} {level:<5} ]")
     }
 }
 
@@ -164,7 +163,7 @@ fn new_log_message_prefix_text(level: Level) -> String {
         let level = format!("{level:<14}");
         format!("[{time} {level} ]")
     } else {
-        format!("[{time} {level:^5} ]")
+        format!("[{time} {level:<5} ]")
     }
 }
 
@@ -198,45 +197,74 @@ pub fn trace(text: &str) {
     eprintln!("{message_prefix} {text}");
 }
 
-#[derive(Clone, Copy, Debug, Hash, Default)]
-pub struct Logger {
-    pub level: Level,
+#[macro_export]
+macro_rules! error {
+    ($log_level:expr, $($arg:tt)*) => {{
+        #[cfg(feature = "log-err")]
+        {
+            if $log_level >= Level::Error {
+                error(&std::fmt::format(format_args!($($arg)*)));
+            }
+        }
+    }};
 }
 
-impl Logger {
-    pub fn error(self, text: &str) {
-        if (self.level >= Level::Error) {
-            error(text);
+#[macro_export]
+macro_rules! warn {
+    ($log_level:expr, $($arg:tt)*) => {{
+        #[cfg(feature = "log-warn")]
+        {
+            if $log_level >= Level::Warn {
+                warn(&std::fmt::format(format_args!($($arg)*)));
+            }
         }
-    }
+    }};
+}
 
-    pub fn warn(self, text: &str) {
-        if (self.level >= Level::Warn) {
-            warn(text);
+#[macro_export]
+macro_rules! info {
+    ($log_level:expr, $($arg:tt)*) => {{
+        #[cfg(feature = "log-info")]
+        {
+            if $log_level >= Level::Info {
+                info(&std::fmt::format(format_args!($($arg)*)));
+            }
         }
-    }
+    }};
+}
 
-    pub fn info(self, text: &str) {
-        if (self.level >= Level::Info) {
-            info(text);
+#[macro_export]
+macro_rules! verb {
+    ($log_level:expr, $($arg:tt)*) => {{
+        #[cfg(feature = "log-verb")]
+        {
+            if $log_level >= Level::Verb {
+                verb(&std::fmt::format(format_args!($($arg)*)));
+            }
         }
-    }
+    }};
+}
 
-    pub fn verb(self, text: &str) {
-        if (self.level >= Level::Verb) {
-            verb(text);
+#[macro_export]
+macro_rules! debug {
+    ($log_level:expr, $($arg:tt)*) => {{
+        #[cfg(feature = "log-debug")]
+        {
+            if $log_level >= Level::Debug {
+                debug(&std::fmt::format(format_args!($($arg)*)));
+            }
         }
-    }
+    }};
+}
 
-    pub fn debug(self, text: &str) {
-        if (self.level >= Level::Debug) {
-            debug(text);
+#[macro_export]
+macro_rules! trace {
+    ($log_level:expr, $($arg:tt)*) => {{
+        #[cfg(feature = "log-trace")]
+        {
+            if $log_level >= Level::Trace {
+                trace(&std::fmt::format(format_args!($($arg)*)));
+            }
         }
-    }
-
-    pub fn trace(self, text: &str) {
-        if (self.level >= Level::Trace) {
-            trace(text);
-        }
-    }
+    }};
 }

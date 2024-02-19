@@ -6,11 +6,11 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use crate::config::Config;
+use crate::{Level, debug, trace, warn};
 
 #[derive(Clone, Copy, Debug, Hash, Default)]
 pub struct HttpServer {
   pub config: Config,
-  pub log: crate::log::Logger,
 }
 
 impl HttpServer {
@@ -98,7 +98,7 @@ impl HttpServer {
     let result_read = match result_timeout {
       Ok(result_read) => result_read,
       Err(err) => {
-        self.log.warn(&format!("Read timed out: {err}"));
+        warn!(self.config.log_level, "Read timed out: {err}");
         return Err(anyhow!(err));
       }
     };
@@ -106,16 +106,13 @@ impl HttpServer {
     let bytes_read = match result_read {
       Ok(bytes_read) => bytes_read,
       Err(err) => {
-        self.log.warn(&format!("Worker: 🤷 Error while reading from remote, aborting connection. Here is the error we got: {err}"));
+        warn!(self.config.log_level, "Worker: 🤷 Error while reading from remote, aborting connection. Here is the error we got: {err}");
         return Err(anyhow!(err));
       }
     };
 
-    self.log.trace(&format!(
-      "stream.read(buffer({})): returned {} bytes",
-      buffer.len(),
-      bytes_read
-    ));
+    trace!(self.config.log_level, "stream.read(buffer({len})): returned {bytes_read} bytes",
+      len = buffer.len());
 
     Ok(bytes_read)
   }
@@ -141,9 +138,9 @@ impl HttpServer {
   }
 
   pub async fn handle_connection(&self, stream: &mut TcpStream) {
-    let log = crate::log::Logger {
-      level: self.config.log_level,
-    };
+    #[allow(unused_variables)]
+    let lvl = self.config.log_level;
+
     let mut request_headers = vec![0; self.config.buffer_client_receive_size];
     let request_body: Vec<u8>;
     let bytes_body_read: usize = 0;
@@ -154,23 +151,20 @@ impl HttpServer {
     let mut request_header_incomplete = false;
 
     // Reading request headers
-    log.debug("begin reading stream into buffer until EOH");
-    log.trace("EOH sequence is \"\\r\\n\\r\\n\" (0x0d, 0x0a, 0x0d, 0x0a)");
+    debug!(lvl, "begin reading stream into buffer until EOH");
+    trace!(lvl, r#"EOH sequence is "\r\n\r\n" (0x0d, 0x0a, 0x0d, 0x0a)"#);
     loop {
       // Read into buffer
       let Ok(bytes_read) = self.read_stream_into(&mut buffer, stream).await else {
-        log.warn(
-          "reading the stream failed, so we are going to bail out of this connection",
-        );
+        warn!(lvl, "reading the stream failed, so we are going to bail out of this connection");
         return;
       };
 
-      // EOH marker is: 0x0d, 0x0a, 0x0d, 0x0a
-      log.trace(&format!("buffer data: {:02x?}", &buffer));
+      trace!(lvl, "buffer data: {:02x?}", &buffer);
 
       // Trim null bytes, in case the buffer wasn't filled
       let Some(buffer_trimmed) = buffer.get(..bytes_read) else {
-        log.warn(&format!("We could not trim the input buffer. The buffer has a length of {buffer_size} and we got {bytes_read} bytes.", buffer_size = self.config.buffer_client_receive_size));
+        warn!(lvl, "We could not trim the input buffer. The buffer has a length of {buffer_size} and we got {bytes_read} bytes.", buffer_size = self.config.buffer_client_receive_size);
         return;
       };
 
@@ -184,7 +178,7 @@ impl HttpServer {
       // append buffer to request_data and check if the client is done with sending request headers
       request_data.extend(buffer_trimmed);
       if let Some(eoh_byte_index) = Self::bytes_contain_eoh(request_data.as_slice()) {
-        log.trace(&format!("EOH sequence found at {eoh_byte_index}"));
+        trace!(lvl, "EOH sequence found at {eoh_byte_index}");
         request_headers = request_data.get(..eoh_byte_index).unwrap().to_vec();
         request_body_byte_index_start = eoh_byte_index + 4; // +4 to skip over the \r\n\r\n at the end
         break;
@@ -199,14 +193,14 @@ impl HttpServer {
     buffer.fill(0);
 
     if request_header_incomplete {
-      log.warn("Since we haven't found the \"\\r\\n\\r\\n\" marker but the remote indicated that they are done sending data we can conclude that the request must be incomplete because all http requests must contain the \"\\r\\n\\r\\n\" sequence at least once.");
+      warn!(lvl, r#"Since we haven't found the "\r\n\r\n" marker but the remote indicated that they are done sending data we can conclude that the request must be incomplete because all http requests must contain the "\r\n\r\n" sequence at least once."#);
       self.send_basic_status_response(stream, 400, "Bad Request")
         .await;
       return;
     }
 
     if request_header_limit_bytes_exceeded {
-      log.warn(&format!("Request header size limit of {request_header_limit_bytes} has been exceeded. Aborting connection...", request_header_limit_bytes = self.config.request_header_limit_bytes));
+      warn!(lvl, "Request header size limit of {request_header_limit_bytes} has been exceeded. Aborting connection...", request_header_limit_bytes = self.config.request_header_limit_bytes);
       self.send_basic_status_response(stream, 400, "Bad Request")
         .await;
       return;
@@ -220,10 +214,10 @@ impl HttpServer {
     let request_headers = String::from_utf8_lossy(&request_headers);
     let request_body = String::new();
 
-    log.debug(&format!("Request headers:\n{request_headers}"));
+    debug!(lvl, "Request headers:\n{request_headers}");
     let mut file = File::create("request_headers.txt").await.unwrap();
     file.write_all(request_headers.as_bytes()).await.unwrap();
-    log.trace(&format!("Request body:\n{request_body}"));
+    trace!(lvl, "Request body:\n{request_body}");
     // let mut file = File::create("request_body.txt").unwrap();
     // file.write_all(request_body.as_bytes()).unwrap();
 
