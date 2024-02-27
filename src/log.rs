@@ -1,84 +1,69 @@
 // vim: sw=4 et filetype=rust
 
-// TODO: remove
-#![allow(dead_code)]
-#![allow(unused)]
-
 use std::fmt;
 
+use crate::config::Config;
+use crate::util;
 #[cfg(feature = "humantime")]
 use time::util::local_offset::Soundness;
 
-#[cfg(feature = "color")]
-use crate::color::Color;
-use crate::color::Colorize;
-use crate::{log, util};
+/// Macro to define an enum and automatically implement the following functions:
+/// - `from_usize`
+/// - `from_str`
+/// - `iter`
+#[macro_export]
+macro_rules! enum_with_helpers {
+    ($vis:vis enum $name:ident { $($variant:ident),+ $(,)? } default: $default_variant:ident) => {
+        #[repr(usize)]
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+        $vis enum $name {
+            $($variant),+
+        }
 
-/// An enum representing the available verbosity levels of the logger.
-///
-/// Default value: `Warn`
-#[repr(usize)]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
-pub enum Level {
-    /// The "error" level.
-    ///
-    /// Designates very serious errors.
-    Error = 1,
-    /// The "warn" level.
-    ///
-    /// Designates hazardous situations.
-    #[default]
-    Warn,
-    /// The "info" level.
-    ///
-    /// Designates useful information.
-    Info,
-    /// The "verbose" level.
-    ///
-    /// Designates some additional information.
-    Verb,
-    /// The "debug" level.
-    ///
-    /// Designates lower priority information.
-    Debug,
-    /// The "trace" level.
-    ///
-    /// Designates very low priority, often extremely verbose, information.
-    Trace,
+        impl Default for $name {
+            fn default() -> Self {
+                $name::$default_variant
+            }
+        }
+
+        impl $name {
+            /// Function to convert a usize to an enum variant
+            pub fn from_usize(u: usize) -> Option<Self> {
+                match u {
+                    $(x if x == $name::$variant as usize => Some($name::$variant),)+
+                    _ => None,
+                }
+            }
+
+            /// Function to convert a &str to an enum variant
+            pub fn from_str(s: &str) -> Option<Self> {
+                match s.to_lowercase().as_str() {
+                    $(
+                        _s if _s == stringify!($variant).to_lowercase() => Some($name::$variant),
+                    )+
+                    _ => None,
+                }
+            }
+
+            /// Function to iterate over all enum variants
+            #[allow(unused)]
+            pub fn iter() -> impl Iterator<Item = Self> {
+                static VARIANTS: &[$name] = &[$($name::$variant),+];
+                VARIANTS.iter().copied()
+            }
+        }
+    };
 }
 
-impl Level {
-    fn from_usize(u: usize) -> Option<Level> {
-        match u {
-            1 => Some(Level::Error),
-            2 => Some(Level::Warn),
-            3 => Some(Level::Info),
-            4 => Some(Level::Verb),
-            5 => Some(Level::Debug),
-            6 => Some(Level::Trace),
-            _ => None,
-        }
-    }
-
-    fn from_str(s: &str) -> Option<Level> {
-        match s {
-            "error" => Some(Level::Error),
-            "warn" => Some(Level::Warn),
-            "info" => Some(Level::Info),
-            "verb" => Some(Level::Verb),
-            "debug" => Some(Level::Debug),
-            "trace" => Some(Level::Trace),
-            _ => None,
-        }
-    }
-
-    pub fn iter() -> impl Iterator<Item = Self> {
-        (1..7).map(|i| Self::from_usize(i).unwrap())
-    }
-
-    fn compare_levels(a: Level, b: Level) -> std::cmp::Ordering {
-        a.cmp(&b)
-    }
+enum_with_helpers! {
+    pub enum Level {
+        Error,
+        Warn,
+        Info,
+        Verb,
+        Debug,
+        Trace,
+    } default: Warn
 }
 
 impl TryFrom<usize> for Level {
@@ -105,23 +90,6 @@ impl TryFrom<&str> for Level {
     }
 }
 
-#[cfg(feature = "color")]
-impl fmt::Display for Level {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = match self {
-            Level::Error => "Error".red(),
-            Level::Warn => "Warn".yellow(),
-            Level::Info => "Info".green(),
-            Level::Verb => "Verb".magenta(),
-            Level::Debug => "Debug".blue(),
-            Level::Trace => "Trace".cyan(),
-        };
-
-        util::format_with_options(&value, f)
-    }
-}
-
-#[cfg(not(feature = "color"))]
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let value = format!("{self:?}");
@@ -129,9 +97,86 @@ impl fmt::Display for Level {
     }
 }
 
+pub struct Log {
+    config: Config,
+    message: String,
+    level: Level,
+    time: String,
+}
+
+impl Log {
+    pub fn new(config: Config, text: &str, level: Level) -> Log {
+        Log {
+            level,
+            message: text.to_string(),
+            config,
+            time: new_time_string(),
+        }
+    }
+}
+
+#[cfg(feature = "color")]
+impl fmt::Display for Log {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.config.colored_output {
+            use crate::color::Colorize;
+
+            let level_text: &str = &format!("{}", self.level);
+            let level = match self.level {
+                Level::Error => level_text.red(),
+                Level::Warn => level_text.yellow(),
+                Level::Info => level_text.green(),
+                Level::Verb => level_text.magenta(),
+                Level::Debug => level_text.blue(),
+                Level::Trace => level_text.cyan(),
+            };
+
+            let value = format_log_message(&self.time.clone(), &level, &self.message.clone(), true);
+            util::format_with_options(&value, f)
+        } else {
+            let value = format_log_message(
+                &self.time.clone(),
+                &self.level.to_string(),
+                &self.message.clone(),
+                false,
+            );
+            util::format_with_options(&value, f)
+        }
+    }
+}
+
+#[cfg(not(feature = "color"))]
+impl fmt::Display for Log {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // config is only used when color feature is enabled
+        let _ = self.config;
+
+        let value = format_log_message(
+            &self.time.clone(),
+            &self.level.to_string(),
+            &self.message.clone(),
+            false,
+        );
+        util::format_with_options(&value, f)
+    }
+}
+
+pub fn format_log_message(
+    time: &str,
+    level: &str,
+    message: &str,
+    contains_ansi_color: bool,
+) -> String {
+    if contains_ansi_color {
+        format!("[{time} {level:<14}]: {message}")
+    } else {
+        format!("[{time} {level:<5}]: {message}")
+    }
+}
+
 /// Safety notice: <https://docs.rs/time/0.3.34/time/util/local_offset/fn.set_soundness.html#safety>
 #[cfg(feature = "humantime")]
-fn new_log_message_prefix_text(level: Level) -> String {
+pub fn new_time_string() -> String {
     unsafe {
         time::util::local_offset::set_soundness(Soundness::Unsound);
     }
@@ -145,65 +190,92 @@ fn new_log_message_prefix_text(level: Level) -> String {
         )
         .unwrap_or_default();
 
-    if cfg!(feature = "color") {
-        format!("[{time} {level:<14} ]")
-    } else {
-        format!("[{time} {level:<5} ]")
-    }
+    time
 }
 
 #[cfg(not(feature = "humantime"))]
-fn new_log_message_prefix_text(level: Level) -> String {
+#[allow(clippy::let_and_return)]
+pub fn new_time_string() -> String {
     let now = time::OffsetDateTime::now_utc();
     let time = now
         .format(&time::format_description::well_known::Iso8601::DEFAULT)
         .unwrap_or_default();
 
-    if cfg!(feature = "color") {
-        let level = format!("{level:<14}");
-        format!("[{time} {level} ]")
-    } else {
-        format!("[{time} {level:<5} ]")
+    time
+}
+
+fn detect_tty_and_update_config_for(config: Config) -> Config {
+    let mut config = config;
+
+    // A terminal is not attached, disable ANSI colored output
+    if !util::enable_terminal_colors(config) {
+        config.colored_output = false;
     }
+
+    config
 }
 
-pub fn error(text: &str) {
-    let message_prefix = new_log_message_prefix_text(Level::Error);
-    eprintln!("{message_prefix} {text}");
+#[allow(dead_code)]
+pub fn error(config: Config, text: &str) {
+    let config = detect_tty_and_update_config_for(config);
+    let formatted_message = format!("{}", Log::new(config, text, Level::Error));
+    eprintln!("{formatted_message}");
 }
 
-pub fn warn(text: &str) {
-    let message_prefix = new_log_message_prefix_text(Level::Warn);
-    eprintln!("{message_prefix} {text}");
+#[allow(dead_code)]
+pub fn warn(config: Config, text: &str) {
+    let config = detect_tty_and_update_config_for(config);
+    let formatted_message = format!("{}", Log::new(config, text, Level::Warn));
+    eprintln!("{formatted_message}");
 }
 
-pub fn info(text: &str) {
-    let message_prefix = new_log_message_prefix_text(Level::Info);
-    println!("{message_prefix} {text}");
+#[allow(dead_code)]
+pub fn info(config: Config, text: &str) {
+    let config = detect_tty_and_update_config_for(config);
+    let formatted_message = format!("{}", Log::new(config, text, Level::Info));
+    println!("{formatted_message}");
 }
 
-pub fn verb(text: &str) {
-    let message_prefix = new_log_message_prefix_text(Level::Verb);
-    eprintln!("{message_prefix} {text}");
+#[allow(dead_code)]
+pub fn verb(config: Config, text: &str) {
+    let config = detect_tty_and_update_config_for(config);
+    let formatted_message = format!("{}", Log::new(config, text, Level::Verb));
+    eprintln!("{formatted_message}");
 }
 
-pub fn debug(text: &str) {
-    let message_prefix = new_log_message_prefix_text(Level::Debug);
-    eprintln!("{message_prefix} {text}");
+#[allow(dead_code)]
+pub fn debug(config: Config, text: &str) {
+    let config = detect_tty_and_update_config_for(config);
+    let formatted_message = format!("{}", Log::new(config, text, Level::Debug));
+    eprintln!("{formatted_message}");
 }
 
-pub fn trace(text: &str) {
-    let message_prefix = new_log_message_prefix_text(Level::Trace);
-    eprintln!("{message_prefix} {text}");
+#[allow(dead_code)]
+pub fn trace(config: Config, text: &str) {
+    let config = detect_tty_and_update_config_for(config);
+    let formatted_message = format!("{}", Log::new(config, text, Level::Trace));
+    eprintln!("{formatted_message}");
+}
+
+#[macro_export]
+macro_rules! init {
+    ($($arg:tt)*) => {{
+        #[cfg(feature = "log-trace")]
+        {
+            let text = &std::fmt::format(format_args!($($arg)*));
+            let formatted_message = format_log_message(&new_time_string(), "Init", text, false);
+            eprintln!("{formatted_message}");
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! error {
-    ($log_level:expr, $($arg:tt)*) => {{
+    ($config:expr, $($arg:tt)*) => {{
         #[cfg(feature = "log-err")]
         {
-            if $log_level >= Level::Error {
-                error(&std::fmt::format(format_args!($($arg)*)));
+            if $config.log_level >= Level::Error {
+                error($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};
@@ -211,11 +283,11 @@ macro_rules! error {
 
 #[macro_export]
 macro_rules! warn {
-    ($log_level:expr, $($arg:tt)*) => {{
+    ($config:expr, $($arg:tt)*) => {{
         #[cfg(feature = "log-warn")]
         {
-            if $log_level >= Level::Warn {
-                warn(&std::fmt::format(format_args!($($arg)*)));
+            if $config.log_level >= Level::Warn {
+                warn($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};
@@ -223,11 +295,11 @@ macro_rules! warn {
 
 #[macro_export]
 macro_rules! info {
-    ($log_level:expr, $($arg:tt)*) => {{
+    ($config:expr, $($arg:tt)*) => {{
         #[cfg(feature = "log-info")]
         {
-            if $log_level >= Level::Info {
-                info(&std::fmt::format(format_args!($($arg)*)));
+            if $config.log_level >= Level::Info {
+                info($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};
@@ -235,11 +307,11 @@ macro_rules! info {
 
 #[macro_export]
 macro_rules! verb {
-    ($log_level:expr, $($arg:tt)*) => {{
+    ($config:expr, $($arg:tt)*) => {{
         #[cfg(feature = "log-verb")]
         {
-            if $log_level >= Level::Verb {
-                verb(&std::fmt::format(format_args!($($arg)*)));
+            if $config.log_level >= Level::Verb {
+                verb($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};
@@ -247,11 +319,11 @@ macro_rules! verb {
 
 #[macro_export]
 macro_rules! debug {
-    ($log_level:expr, $($arg:tt)*) => {{
+    ($config:expr, $($arg:tt)*) => {{
         #[cfg(feature = "log-debug")]
         {
-            if $log_level >= Level::Debug {
-                debug(&std::fmt::format(format_args!($($arg)*)));
+            if $config.log_level >= Level::Debug {
+                debug($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};
@@ -259,11 +331,11 @@ macro_rules! debug {
 
 #[macro_export]
 macro_rules! trace {
-    ($log_level:expr, $($arg:tt)*) => {{
+    ($config:expr, $($arg:tt)*) => {{
         #[cfg(feature = "log-trace")]
         {
-            if $log_level >= Level::Trace {
-                trace(&std::fmt::format(format_args!($($arg)*)));
+            if $config.log_level >= Level::Trace {
+                trace($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};

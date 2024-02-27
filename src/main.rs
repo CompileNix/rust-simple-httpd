@@ -4,6 +4,7 @@
 
 // extern crate env_logger;
 // extern crate log;
+extern crate atty;
 extern crate core;
 extern crate num_cpus;
 
@@ -29,9 +30,8 @@ mod util;
 
 #[tokio::main]
 async fn main() {
-    let config = Config::default_from_env();
-    let lvl = config.log_level;
-    verb!(lvl, "We are using the following config: {config}");
+    let cfg = Config::default_from_env();
+    verb!(cfg, "We are using the following config: {cfg}");
 
     let _ = thread::Builder::new()
         .name("ProcessSignalHandler".into())
@@ -46,18 +46,18 @@ async fn main() {
                 if sig == SIGQUIT {
                     signal_text = "SIGQUIT".into();
                 }
-                info!(lvl, "Received process signal {signal_text}");
+                info!(cfg, "Received process signal {signal_text}");
                 process::exit(0);
             }
         });
 
-    let server = http_server::HttpServer { config };
+    let server = http_server::HttpServer { config: cfg };
     let bind_addr = "127.0.0.1:8000";
     #[allow(clippy::expect_fun_call)]
     let listener = TcpListener::bind(bind_addr)
         .await
         .expect(&format!("Can't bind to {bind_addr}"));
-    info!(lvl, "listening on {bind_addr}");
+    info!(cfg, "listening on {bind_addr}");
 
     let worker_count = num_cpus::get();
     let semaphore = Arc::new(Semaphore::new(worker_count));
@@ -67,22 +67,22 @@ async fn main() {
             Ok(accept) => accept,
             Err(error) => {
                 warn!(
-                    lvl,
+                    cfg,
                     "Couldn't receive new connection from socket listener: {error:?}"
                 );
                 continue;
             }
         };
 
-        debug!(lvl, "Alright, we got a new connection from {socket_addr}.");
-        trace!(lvl, "Lets see if we have to wait for an available worker");
+        debug!(cfg, "Alright, we got a new connection from {socket_addr}.");
+        trace!(cfg, "Lets see if we have to wait for an available worker");
         trace!(
-            lvl,
+            cfg,
             "{0} of {worker_count} workers are available",
             semaphore.available_permits()
         );
         trace!(
-            lvl,
+            cfg,
             "We are going ahead with acquiring a permit, or waiting for one to become available"
         );
 
@@ -93,7 +93,7 @@ async fn main() {
 
         tokio::spawn(async move {
             server.clone().handle_connection(&mut stream).await;
-            debug!(lvl, "We are done with a request from {socket_addr}");
+            debug!(cfg, "We are done with a request from {socket_addr}");
             drop(permit);
         });
     }
