@@ -41,6 +41,7 @@ pub fn enable_terminal_colors(config: Config) -> bool {
 }
 
 #[cfg(feature = "color")]
+#[cfg(feature = "log-trace")]
 fn write_formatted_eol_byte(byte: u8, prefix: &str, config: Config) -> String {
     use crate::color::Color;
     use crate::color::Colorize;
@@ -71,6 +72,7 @@ fn write_formatted_eol_byte(byte: u8, prefix: &str, config: Config) -> String {
 }
 
 #[cfg(not(feature = "color"))]
+#[cfg(feature = "log-trace")]
 fn write_formatted_eol_byte(byte: u8, prefix: &str, config: Config) -> String {
     // config is only used when color feature is enabled
     let _ = config;

@@ -1,4 +1,5 @@
 use crate::config::Config;
+#[cfg(feature = "log-trace")]
 use crate::util::highlighted_hex_vec;
 use crate::{debug, trace, warn, Level};
 use anyhow::anyhow;
@@ -146,8 +147,9 @@ impl HttpServer {
         stream.flush().await.ok();
     }
 
+    // TODO: continue work
+    #[allow(unused_variables, unused_assignments, clippy::unwrap_used)]
     pub async fn handle_connection(&self, stream: &mut TcpStream) {
-        #[allow(unused_variables)]
         let cfg = self.config;
 
         let mut request_headers = vec![0; self.config.buffer_client_receive_size];

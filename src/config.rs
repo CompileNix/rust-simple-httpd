@@ -16,6 +16,13 @@ pub struct Config {
     pub buffer_read_client_timeout: Duration,
 }
 
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let value = format!("{self:?}");
+        util::format_with_options(&value, f)
+    }
+}
+
 impl Config {
     pub fn default() -> Config {
         init!("create default config");
@@ -31,46 +38,68 @@ impl Config {
     }
 
     pub fn default_from_env() -> Config {
-        init!("create default config from env vars");
         let mut config = Self::default();
+        init!("create default config from env vars");
 
-        // TODO: following code block is unpleasant to read
-        let rust_log_key = "RUST_LOG";
-        init!(r#"discover config "log_level" from env var "{rust_log_key}""#);
-        if let Ok(rust_log) = env::var(rust_log_key) {
-            init!(r#"env var "{rust_log_key}" exists"#);
-            let parsed_log_level = Self::try_parse_log_level(rust_log.as_str());
-
-            if let Ok(log_level) = parsed_log_level {
-                config.log_level = log_level;
-            } else {
-                init!(r#"keep default log level of "{}""#, config.log_level);
-            }
-        } else {
-            init!(r#"keep default log level of "{}""#, config.log_level);
-        }
+        config.log_level = discover_from_env_or(config.log_level, "RUST_LOG", "log_level");
+        // TODO: continue here
+        // config.colored_output = discover_from_env_or(config.colored_output, "COLORED_OUTPUT", "colored_output");
 
         config
     }
+}
 
-    fn try_parse_log_level(level: &str) -> Result<Level, &'static str> {
-        init!(r#"try to find a log level named "{level}""#);
+fn discover_from_env_or<T: PartialEq + fmt::Display + for<'a> TryFrom<&'a str>>(
+    default: T,
+    env_key: &str,
+    config_name: &str,
+) -> T {
+    init!(r#"discover config "{config_name}" via env "{env_key}""#);
 
-        let parsed_log_level = Level::try_from(level);
-
-        if let Ok(level) = parsed_log_level {
-            init!("log level was found as {level:?}");
-        } else {
-            init!("log level was NOT found");
+    let discovered_value = match try_discover_env(env_key) {
+        None => {
+            init!(r#"keep default "{config_name}" value of "{default}""#);
+            return default;
         }
+        Some(value) => value,
+    };
 
-        parsed_log_level
+    match try_parse_env(&discovered_value, config_name) {
+        None => {
+            init!(r#"keep default "{config_name}" value of "{default}""#);
+            default
+        }
+        Some(value) => value,
     }
 }
 
-impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = format!("{self:?}");
-        util::format_with_options(&value, f)
+fn try_parse_env<T: for<'a> TryFrom<&'a str> + fmt::Display>(
+    value: &str,
+    config_name: &str,
+) -> Option<T> {
+    init!(r#"try to parse "{value}" for "{config_name}""#);
+
+    let parsed_value_option = T::try_from(value);
+    if let Ok(parsed_value) = parsed_value_option {
+        init!(r#"value of "{value}" was found as "{parsed_value}" for {config_name}"#);
+        Some(parsed_value)
+    } else {
+        init!(r#"value of "{value}" was NOT found for {config_name}"#);
+        None
+    }
+}
+
+fn try_discover_env(key: &str) -> Option<String> {
+    match env::var(key) {
+        Ok(val) => {
+            init!(r#"env var "{key}" exists and has value "{val}""#);
+            Some(val)
+        }
+        Err(err) => {
+            init!(
+                r#"couldn't interpret env var "{key}". It either doesn't exist or it's value isn't valid Unicode. Error was: {err:?}"#
+            );
+            None
+        }
     }
 }

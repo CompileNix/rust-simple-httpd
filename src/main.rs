@@ -28,6 +28,7 @@ mod log;
 mod tests;
 mod util;
 
+#[allow(unused_variables, unused_assignments, clippy::unwrap_used)]
 #[tokio::main]
 async fn main() {
     let cfg = Config::default_from_env();
