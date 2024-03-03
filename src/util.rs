@@ -1,6 +1,6 @@
 use crate::config::Config;
-use atty::Stream;
 use std::fmt;
+use std::io::IsTerminal;
 
 pub fn format_with_options(value: &impl fmt::Display, f: &mut fmt::Formatter) -> fmt::Result {
     if let Some(width) = f.width() {
@@ -28,13 +28,9 @@ pub fn enable_terminal_colors(config: Config) -> bool {
     }
 
     let colored_output = config.colored_output;
-    // println!("colored_output: {colored_output}");
-    let is_tty_stdout = atty::is(Stream::Stdout);
-    // println!("is_tty_stdout: {is_tty_stdout}");
-    let is_tty_stderr = atty::is(Stream::Stderr);
-    // println!("is_tty_stderr: {is_tty_stderr}");
+    let is_tty_stdout = std::io::stdout().is_terminal();
+    let is_tty_stderr = std::io::stderr().is_terminal();
     let result = colored_output && is_tty_stdout && is_tty_stderr;
-    // println!("result: {result}");
 
     #[allow(clippy::let_and_return)]
     result

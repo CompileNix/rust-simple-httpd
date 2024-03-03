@@ -4,7 +4,6 @@
 
 // extern crate env_logger;
 // extern crate log;
-extern crate atty;
 extern crate core;
 extern crate num_cpus;
 

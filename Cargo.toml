@@ -16,7 +16,6 @@ log-trace = ["log-debug"]
 
 [dependencies]
 anyhow = "1"
-atty = "0"
 indoc = "2"
 log = "0"
 num_cpus = "1"
