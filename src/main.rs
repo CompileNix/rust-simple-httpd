@@ -8,8 +8,8 @@ extern crate num_cpus;
 pub mod log;
 
 use crate::config::Config;
-use crate::log::{debug, trace, info, warn, verb};
 use crate::log::Level;
+use crate::log::{debug, info, trace, verb, warn};
 
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;

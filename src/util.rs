@@ -107,12 +107,8 @@ fn write_formatted_eol_byte(byte: u8, config: Config) -> String {
     let _ = config;
 
     match byte {
-        b'\r' => {
-            "\\r".to_string()
-        }
-        b'\n' => {
-            "\\n".to_string()
-        }
+        b'\r' => "\\r".to_string(),
+        b'\n' => "\\n".to_string(),
         _ => {
             format!("{byte:02x}")
         }
@@ -182,11 +178,7 @@ pub fn num_digits(n: usize) -> usize {
     n.to_string().chars().count()
 }
 
-pub fn format_log_message_prefix(
-    time: &str,
-    level: &str,
-    contains_ansi_color: bool,
-) -> String {
+pub fn format_log_message_prefix(time: &str, level: &str, contains_ansi_color: bool) -> String {
     if contains_ansi_color {
         format!("[{time} {level:<14}]: ")
     } else {
@@ -202,13 +194,13 @@ pub fn new_time_string() -> String {
     }
     let now = time::OffsetDateTime::now_local().unwrap_or(time::OffsetDateTime::now_utc());
     let time = now
-      .format(
-          &time::format_description::parse_borrowed::<2>(
-              "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second]",
-          )
+        .format(
+            &time::format_description::parse_borrowed::<2>(
+                "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second]",
+            )
             .expect("Could not format current datetime to string for log message"),
-      )
-      .unwrap_or_default();
+        )
+        .unwrap_or_default();
 
     time
 }
@@ -218,8 +210,8 @@ pub fn new_time_string() -> String {
 pub fn new_time_string() -> String {
     let now = time::OffsetDateTime::now_utc();
     let time = now
-      .format(&time::format_description::well_known::Iso8601::DEFAULT)
-      .unwrap_or_default();
+        .format(&time::format_description::well_known::Iso8601::DEFAULT)
+        .unwrap_or_default();
 
     time
 }
@@ -244,15 +236,20 @@ pub fn log_level_to_string_colorized(level: crate::log::Level) -> crate::color::
 
 #[cfg(feature = "log-trace")]
 pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: Config) -> String {
-    let mut output = String::from("[");
+    let mut output = String::new();
     let digits = num_digits(index_offset + vec.len());
 
     #[cfg(feature = "color")]
     let colorized_text = log_level_to_string_colorized(crate::log::Level::Trace);
     #[cfg(feature = "color")]
-    let format_log_message_prefix = format_log_message_prefix(&new_time_string(), &colorized_text.text, config.colored_output);
+    let format_log_message_prefix = format_log_message_prefix(
+        &new_time_string(),
+        &colorized_text.text,
+        config.colored_output,
+    );
     #[cfg(feature = "color")]
-    let format_log_message_prefix_length = format_log_message_prefix.len() - colorized_text.color_code_length;
+    let format_log_message_prefix_length =
+        format_log_message_prefix.len() - colorized_text.color_code_length;
 
     #[cfg(not(feature = "color"))]
     let text = crate::log::Level::Trace.to_string();

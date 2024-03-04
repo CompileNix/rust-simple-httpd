@@ -1,11 +1,11 @@
 #![cfg(feature = "color")]
 
-use std::fmt;
 use crate::util;
+use std::fmt;
 
 pub struct ColorizedText {
     pub text: String,
-    pub color_code_length: usize
+    pub color_code_length: usize,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -42,15 +42,13 @@ impl Color {
     fn colorize(self, text: &str) -> ColorizedText {
         let color = self.write_foreground_code();
         let reset_color = Color::Reset.write_foreground_code();
-        let text = format!(
-            "{}{}{}",
-            color,
-            text,
-            reset_color
-        );
+        let text = format!("{}{}{}", color, text, reset_color);
         let color_code_length = color.len() + reset_color.len();
 
-        ColorizedText { text, color_code_length }
+        ColorizedText {
+            text,
+            color_code_length,
+        }
     }
 }
 

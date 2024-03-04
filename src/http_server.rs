@@ -1,7 +1,7 @@
-use crate::Level;
 use crate::config::Config;
 #[cfg(feature = "log-trace")]
 use crate::util::highlighted_hex_vec;
+use crate::Level;
 use crate::{debug, trace, warn};
 use anyhow::anyhow;
 use indoc::formatdoc;
@@ -178,7 +178,11 @@ impl HttpServer {
                 return;
             };
 
-            trace!(cfg, "buffer data: {}", highlighted_hex_vec(&buffer, request_data.len(), cfg));
+            trace!(
+                cfg,
+                "buffer data: {}",
+                highlighted_hex_vec(&buffer, request_data.len(), cfg)
+            );
 
             // Trim null bytes, in case the buffer wasn't filled
             let Some(buffer_trimmed) = buffer.get(..bytes_read) else {

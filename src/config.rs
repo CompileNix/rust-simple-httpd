@@ -1,9 +1,9 @@
-use std::fmt;
 use std::env;
+use std::fmt;
 use tokio::time::Duration;
 
-use crate::util::{new_time_string};
-use crate::{init, util, log};
+use crate::util::new_time_string;
+use crate::{init, log, util};
 
 #[derive(Clone, Copy, Debug, Hash, Default)]
 pub struct Config {
