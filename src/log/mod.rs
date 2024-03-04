@@ -67,14 +67,16 @@ impl Log<'_> {
 #[cfg(feature = "color")]
 impl fmt::Display for Log<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let level_text = if self.config.colored_output {
+        let colored = util::is_colored_output_avail(self.config);
+
+        let level_text = if colored {
             util::log_level_to_string_colorized(self.level).text
         } else {
             self.level.to_string()
         };
 
         let log_message_prefix =
-            crate::util::format_log_message_prefix(&self.time.clone(), &level_text, true);
+            crate::util::format_log_message_prefix(&self.time.clone(), &level_text, colored);
         let log_message = format!("{log_message_prefix}{}", self.message);
         util::format_with_options(&log_message, f)
     }

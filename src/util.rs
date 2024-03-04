@@ -129,10 +129,8 @@ macro_rules! struct_with_colorized_display_impl {
 pub fn is_terminal_attached() -> bool {
     let is_tty_stdout = std::io::stdout().is_terminal();
     let is_tty_stderr = std::io::stderr().is_terminal();
-    let result = is_tty_stdout && is_tty_stderr;
 
-    #[allow(clippy::let_and_return)]
-    result
+    is_tty_stdout && is_tty_stderr
 }
 
 /// A terminal is not attached, disable ANSI colored output
@@ -141,11 +139,7 @@ pub fn is_colored_output_avail(config: &Config) -> bool {
         return true;
     }
 
-    let is_terminal_attached = is_terminal_attached();
-    let result = config.colored_output && is_terminal_attached;
-
-    #[allow(clippy::let_and_return)]
-    result
+    config.colored_output && is_terminal_attached()
 }
 
 #[cfg(feature = "color")]
