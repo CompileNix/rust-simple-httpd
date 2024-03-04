@@ -42,7 +42,7 @@ impl Color {
     fn colorize(self, text: &str) -> ColorizedText {
         let color = self.write_foreground_code();
         let reset_color = Color::Reset.write_foreground_code();
-        let text = format!("{}{}{}", color, text, reset_color);
+        let text = format!("{color}{text}{reset_color}");
         let color_code_length = color.len() + reset_color.len();
 
         ColorizedText {

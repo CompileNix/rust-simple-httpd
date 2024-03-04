@@ -27,6 +27,7 @@ macro_rules! enum_with_helpers {
 
         impl $name {
             /// Function to convert a usize to an enum variant
+            #[must_use]
             pub fn from_usize(u: usize) -> Option<Self> {
                 match u {
                     $(x if x == $name::$variant as usize => Some($name::$variant),)+
@@ -35,6 +36,7 @@ macro_rules! enum_with_helpers {
             }
 
             /// Function to convert a &str to an enum variant
+            #[must_use]
             pub fn from_str(s: &str) -> Option<Self> {
                 match s.to_lowercase().as_str() {
                     $(
@@ -54,8 +56,74 @@ macro_rules! enum_with_helpers {
     };
 }
 
+#[macro_export]
+#[cfg(not(feature = "color"))]
+macro_rules! struct_with_colorized_display_impl {
+    (
+        $vis_struct:vis struct $name:ident {
+            $(
+                $vis_field:vis $field:ident: $type:ty,
+            )*
+        }
+    ) => {
+        #[derive(Clone, Debug, Hash, Default)]
+        $vis_struct struct $name {
+            $(
+                $vis_field $field: $type
+            ),+
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let value = format!("{self:?}");
+                util::format_with_options(&value, f)
+            }
+        }
+    };
+}
+
+#[macro_export]
+#[cfg(feature = "color")]
+macro_rules! struct_with_colorized_display_impl {
+    (
+        $vis_struct:vis struct $name:ident {
+            $(
+                $vis_field:vis $field:ident: $type:ty,
+            )*
+        }
+    ) => {
+        #[derive(Clone, Debug, Hash, Default)]
+        $vis_struct struct $name {
+            $(
+                $vis_field $field: $type
+            ),+
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let mut output = String::new();
+
+                output += &stringify!($name).to_string().green().text;
+                output += " {";
+
+                let mut formatted_field_value: String;
+                $(
+                    formatted_field_value = format!("{:?}", self.$field);
+                    output += &*format!(" {}: {},", stringify!($field).to_string().blue().text, formatted_field_value.yellow().text);
+                )*
+                // remove trailing ","
+                output.pop();
+
+                output += " }";
+
+                util::format_with_options(&output, f)
+            }
+        }
+    };
+}
+
 /// A terminal is not attached, disable ANSI colored output
-pub fn enable_terminal_colors(config: Config) -> bool {
+pub fn is_terminal_attached(config: &Config) -> bool {
     if config.colored_output_forced {
         return true;
     }
@@ -71,27 +139,26 @@ pub fn enable_terminal_colors(config: Config) -> bool {
 
 #[cfg(feature = "color")]
 #[cfg(feature = "log-trace")]
-fn write_formatted_eol_byte(byte: u8, config: Config) -> String {
+fn write_formatted_eol_byte(byte: u8, config: &Config) -> String {
     use crate::color::Color;
     use crate::color::Colorize;
     let eol_color = Color::Yellow;
-    let enable_terminal_colors = enable_terminal_colors(config);
 
     match byte {
         b'\r' => {
             let replacement = String::from(r"\r");
-            if enable_terminal_colors {
-                format!("{}", replacement.colorize(eol_color).text)
+            if config.colored_output {
+                replacement.colorize(eol_color).text.to_string()
             } else {
-                format!("{replacement}")
+                replacement.to_string()
             }
         }
         b'\n' => {
             let replacement = String::from(r"\n");
-            if enable_terminal_colors {
-                format!("{}", replacement.colorize(eol_color).text)
+            if config.colored_output {
+                replacement.colorize(eol_color).text.to_string()
             } else {
-                format!("{replacement}")
+                replacement.to_string()
             }
         }
         _ => {
@@ -102,7 +169,7 @@ fn write_formatted_eol_byte(byte: u8, config: Config) -> String {
 
 #[cfg(not(feature = "color"))]
 #[cfg(feature = "log-trace")]
-fn write_formatted_eol_byte(byte: u8, config: Config) -> String {
+fn write_formatted_eol_byte(byte: u8, config: &Config) -> String {
     // config is only used when color feature is enabled
     let _ = config;
 
@@ -235,7 +302,7 @@ pub fn log_level_to_string_colorized(level: crate::log::Level) -> crate::color::
 // #[cfg(not(feature = "color"))]
 
 #[cfg(feature = "log-trace")]
-pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: Config) -> String {
+pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> String {
     let mut output = String::new();
     let digits = num_digits(index_offset + vec.len());
 
@@ -260,14 +327,14 @@ pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: Config) -> S
 
     for (index, byte) in vec.iter().enumerate() {
         if index != 0 {
-            output.push_str(" ");
+            output.push(' ');
         }
 
         if index % 8 == 0 {
-            output.push_str("\n");
+            output.push('\n');
             output += &*" ".repeat(format_log_message_prefix_length);
             let current_index = index + index_offset;
-            output.push_str(&*format!("{current_index:digits$} = "));
+            output.push_str(&format!("{current_index:digits$} = "));
         }
 
         output.push_str(&write_formatted_eol_byte(*byte, config));

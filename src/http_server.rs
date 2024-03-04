@@ -11,7 +11,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-#[derive(Clone, Copy, Debug, Hash, Default)]
+#[derive(Clone, Debug, Hash, Default)]
 pub struct HttpServer {
     pub config: Config,
 }
@@ -99,7 +99,7 @@ impl HttpServer {
         buffer: &mut [u8],
         stream: &mut TcpStream,
     ) -> anyhow::Result<usize> {
-        let cfg = self.config;
+        let cfg = &self.config;
         let result_timeout =
             tokio::time::timeout(self.config.buffer_read_client_timeout, stream.read(buffer)).await;
 
@@ -149,9 +149,14 @@ impl HttpServer {
     }
 
     // TODO: continue work
-    #[allow(unused_variables, unused_assignments, clippy::unwrap_used)]
+    #[allow(
+        unused_variables,
+        unused_assignments,
+        clippy::unwrap_used,
+        clippy::too_many_lines
+    )]
     pub async fn handle_connection(&self, stream: &mut TcpStream) {
-        let cfg = self.config;
+        let cfg = &self.config;
 
         let mut request_headers = vec![0; self.config.buffer_client_receive_size];
         let request_body: Vec<u8>;

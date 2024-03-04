@@ -45,15 +45,16 @@ impl fmt::Display for Level {
     }
 }
 
-pub struct Log {
-    config: Config,
+pub struct Log<'a> {
+    config: &'a Config,
     message: String,
     level: Level,
     time: String,
 }
 
-impl Log {
-    pub fn new(config: Config, text: &str, level: Level) -> Log {
+impl Log<'_> {
+    #[must_use]
+    pub fn new<'a>(config: &'a Config, text: &'a str, level: Level) -> Log<'a> {
         Log {
             level,
             message: text.to_string(),
@@ -64,7 +65,7 @@ impl Log {
 }
 
 #[cfg(feature = "color")]
-impl fmt::Display for Log {
+impl fmt::Display for Log<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let level_text = if self.config.colored_output {
             util::log_level_to_string_colorized(self.level).text
@@ -80,7 +81,7 @@ impl fmt::Display for Log {
 }
 
 #[cfg(not(feature = "color"))]
-impl fmt::Display for Log {
+impl fmt::Display for Log<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // config is only used when color feature is enabled
         let _ = self.config;
@@ -92,55 +93,38 @@ impl fmt::Display for Log {
     }
 }
 
-fn find_tty_and_update_from(config: Config) -> Config {
-    let mut config = config;
-
-    // A terminal is not attached, disable ANSI colored output
-    if !util::enable_terminal_colors(config) {
-        config.colored_output = false;
-    }
-
-    config
-}
-
 #[allow(dead_code)]
-pub fn error(config: Config, text: &str) {
-    let config = find_tty_and_update_from(config);
+pub fn error(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Error));
     eprintln!("{formatted_message}");
 }
 
 #[allow(dead_code)]
-pub fn warn(config: Config, text: &str) {
-    let config = find_tty_and_update_from(config);
+pub fn warn(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Warn));
     eprintln!("{formatted_message}");
 }
 
 #[allow(dead_code)]
-pub fn info(config: Config, text: &str) {
-    let config = find_tty_and_update_from(config);
+pub fn info(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Info));
     println!("{formatted_message}");
 }
 
 #[allow(dead_code)]
-pub fn verb(config: Config, text: &str) {
-    let config = find_tty_and_update_from(config);
+pub fn verb(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Verb));
     eprintln!("{formatted_message}");
 }
 
 #[allow(dead_code)]
-pub fn debug(config: Config, text: &str) {
-    let config = find_tty_and_update_from(config);
+pub fn debug(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Debug));
     eprintln!("{formatted_message}");
 }
 
 #[allow(dead_code)]
-pub fn trace(config: Config, text: &str) {
-    let config = find_tty_and_update_from(config);
+pub fn trace(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Trace));
     eprintln!("{formatted_message}");
 }
@@ -151,7 +135,7 @@ macro_rules! init {
         #[cfg(feature = "log-trace")]
         {
             let text = &std::fmt::format(format_args!($($arg)*));
-            let formatted_message_prefix = crate::util::format_log_message_prefix(&new_time_string(), "Init", false);
+            let formatted_message_prefix = $crate::util::format_log_message_prefix(&new_time_string(), "Init", false);
             let formatted_message = format!("{formatted_message_prefix}{text}");
             eprintln!("{formatted_message}");
         }
@@ -164,7 +148,7 @@ macro_rules! error {
         #[cfg(feature = "log-err")]
         {
             if $config.log_level >= Level::Error {
-                error($config, &std::fmt::format(format_args!($($arg)*)));
+                error(&mut $config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};

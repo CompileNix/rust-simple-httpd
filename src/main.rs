@@ -30,9 +30,15 @@ mod util;
 #[allow(unused_variables, unused_assignments, clippy::unwrap_used)]
 #[tokio::main]
 async fn main() {
-    let cfg = Config::default_from_env();
+    let mut cfg = Config::default_from_env();
+    if !util::is_terminal_attached(&cfg) {
+        cfg.colored_output = false;
+    }
+    let cfg = &cfg;
+
     verb!(cfg, "We are using the following config: {cfg}");
 
+    let signal_handler_config = cfg.clone();
     let _ = thread::Builder::new()
         .name("ProcessSignalHandler".into())
         .spawn(move || {
@@ -46,12 +52,17 @@ async fn main() {
                 if sig == SIGQUIT {
                     signal_text = "SIGQUIT".into();
                 }
-                info!(cfg, "Received process signal {signal_text}");
+                info!(
+                    &signal_handler_config,
+                    "Received process signal {signal_text}"
+                );
                 process::exit(0);
             }
         });
 
-    let server = http_server::HttpServer { config: cfg };
+    let server = http_server::HttpServer {
+        config: cfg.clone(),
+    };
     let bind_addr = "127.0.0.1:8000";
     #[allow(clippy::expect_fun_call)]
     let listener = TcpListener::bind(bind_addr)
@@ -91,9 +102,16 @@ async fn main() {
             .await
             .expect("Failed to receive permit from the semaphore");
 
+        let connection_server_context = server.clone();
+        let tokio_worker_config = cfg.clone();
         tokio::spawn(async move {
-            server.clone().handle_connection(&mut stream).await;
-            debug!(cfg, "We are done with a request from {socket_addr}");
+            connection_server_context
+                .handle_connection(&mut stream)
+                .await;
+            debug!(
+                &tokio_worker_config,
+                "We are done with a request from {socket_addr}"
+            );
             drop(permit);
         });
     }

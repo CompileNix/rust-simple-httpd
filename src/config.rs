@@ -3,24 +3,21 @@ use std::fmt;
 use tokio::time::Duration;
 
 use crate::util::new_time_string;
-use crate::{init, log, util};
+use crate::{init, log, struct_with_colorized_display_impl, util};
 
-#[derive(Clone, Copy, Debug, Hash, Default)]
-pub struct Config {
-    pub log_level: log::Level,
-    pub colored_output: bool,
-    pub colored_output_forced: bool,
-    pub buffer_client_receive_size: usize,
-    pub request_header_limit_bytes: usize,
-    pub buffer_read_client_timeout: Duration,
-}
+#[cfg(feature = "color")]
+use crate::color::Colorize;
 
-impl fmt::Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = format!("{self:?}");
-        util::format_with_options(&value, f)
+struct_with_colorized_display_impl!(
+    pub struct Config {
+        pub log_level: log::Level,
+        pub colored_output: bool,
+        pub colored_output_forced: bool,
+        pub buffer_client_receive_size: usize,
+        pub request_header_limit_bytes: usize,
+        pub buffer_read_client_timeout: Duration,
     }
-}
+);
 
 impl Config {
     pub fn default() -> Config {
