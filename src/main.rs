@@ -31,7 +31,7 @@ mod util;
 #[tokio::main]
 async fn main() {
     let mut cfg = Config::default_from_env();
-    if !util::is_terminal_attached(&cfg) {
+    if !util::is_colored_output_avail(&cfg) {
         cfg.colored_output = false;
     }
     let cfg = &cfg;

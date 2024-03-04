@@ -103,18 +103,22 @@ macro_rules! struct_with_colorized_display_impl {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let mut output = String::new();
 
-                output += &stringify!($name).to_string().green().text;
-                output += " {";
+                if $crate::util::is_terminal_attached() {
+                    output += &stringify!($name).to_string().green().text;
+                    output += " {";
 
-                let mut formatted_field_value: String;
-                $(
-                    formatted_field_value = format!("{:?}", self.$field);
-                    output += &*format!(" {}: {},", stringify!($field).to_string().blue().text, formatted_field_value.yellow().text);
-                )*
-                // remove trailing ","
-                output.pop();
+                    let mut formatted_field_value: String;
+                    $(
+                        formatted_field_value = format!("{:?}", self.$field);
+                        output += &*format!(" {}: {},", stringify!($field).to_string().blue().text, formatted_field_value.yellow().text);
+                    )*
+                    // remove trailing ","
+                    output.pop();
 
-                output += " }";
+                    output += " }";
+                } else {
+                    output += &*format!("{self:?}");
+                };
 
                 util::format_with_options(&output, f)
             }
@@ -122,16 +126,23 @@ macro_rules! struct_with_colorized_display_impl {
     };
 }
 
+pub fn is_terminal_attached() -> bool {
+    let is_tty_stdout = std::io::stdout().is_terminal();
+    let is_tty_stderr = std::io::stderr().is_terminal();
+    let result = is_tty_stdout && is_tty_stderr;
+
+    #[allow(clippy::let_and_return)]
+    result
+}
+
 /// A terminal is not attached, disable ANSI colored output
-pub fn is_terminal_attached(config: &Config) -> bool {
+pub fn is_colored_output_avail(config: &Config) -> bool {
     if config.colored_output_forced {
         return true;
     }
 
-    let colored_output = config.colored_output;
-    let is_tty_stdout = std::io::stdout().is_terminal();
-    let is_tty_stderr = std::io::stderr().is_terminal();
-    let result = colored_output && is_tty_stdout && is_tty_stderr;
+    let is_terminal_attached = is_terminal_attached();
+    let result = config.colored_output && is_terminal_attached;
 
     #[allow(clippy::let_and_return)]
     result
