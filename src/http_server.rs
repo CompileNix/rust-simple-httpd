@@ -1,7 +1,8 @@
+use crate::Level;
 use crate::config::Config;
 #[cfg(feature = "log-trace")]
 use crate::util::highlighted_hex_vec;
-use crate::{debug, trace, warn, Level};
+use crate::{debug, trace, warn};
 use anyhow::anyhow;
 use indoc::formatdoc;
 use std::collections::HashMap;
@@ -155,7 +156,7 @@ impl HttpServer {
         let mut request_headers = vec![0; self.config.buffer_client_receive_size];
         let request_body: Vec<u8>;
         let bytes_body_read: usize = 0;
-        let mut request_data = vec![0; self.config.buffer_client_receive_size];
+        let mut request_data = vec![];
         let request_body_byte_index_start;
         let mut buffer = vec![0; self.config.buffer_client_receive_size];
         let mut request_header_limit_bytes_exceeded = false;
@@ -177,7 +178,7 @@ impl HttpServer {
                 return;
             };
 
-            trace!(cfg, "buffer data: {}", highlighted_hex_vec(&buffer, cfg));
+            trace!(cfg, "buffer data: {}", highlighted_hex_vec(&buffer, request_data.len(), cfg));
 
             // Trim null bytes, in case the buffer wasn't filled
             let Some(buffer_trimmed) = buffer.get(..bytes_read) else {

@@ -111,3 +111,17 @@ fn format_with_options_width_align_center() {
     };
     assert_eq!(format!("{test:^8}"), "  Test  ");
 }
+
+#[test]
+fn count_num_digits() {
+    assert_eq!(util::num_digits(0), 1);
+    assert_eq!(util::num_digits(5), 1);
+    assert_eq!(util::num_digits(42), 2);
+    assert_eq!(util::num_digits(420), 3);
+    assert_eq!(util::num_digits(1000), 4);
+    assert_eq!(util::num_digits(12345), 5);
+    assert_eq!(util::num_digits(123456), 6);
+    assert_eq!(util::num_digits(1234567), 7);
+    assert_eq!(util::num_digits(12345678), 8);
+    assert_eq!(util::num_digits(123456789), 9);
+}

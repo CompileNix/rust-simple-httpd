@@ -1,14 +1,15 @@
-// vim: sw=4 et filetype=rust
 #![feature(rustc_attrs)]
 #![allow(internal_features)]
 
 // extern crate env_logger;
 // extern crate log;
-extern crate core;
 extern crate num_cpus;
 
+pub mod log;
+
 use crate::config::Config;
-use crate::log::{debug, info, trace, verb, warn, Level};
+use crate::log::{debug, trace, info, warn, verb};
+use crate::log::Level;
 
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;
@@ -22,7 +23,6 @@ use tokio::sync::Semaphore;
 mod color;
 mod config;
 mod http_server;
-mod log;
 #[cfg(test)]
 mod tests;
 mod util;

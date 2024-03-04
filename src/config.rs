@@ -1,14 +1,13 @@
-// vim: sw=4 et filetype=rust
-
-use std::{env, fmt};
+use std::fmt;
+use std::env;
 use tokio::time::Duration;
 
-use crate::log::{format_log_message, new_time_string};
-use crate::{init, util, Level};
+use crate::util::{new_time_string};
+use crate::{init, util, log};
 
 #[derive(Clone, Copy, Debug, Hash, Default)]
 pub struct Config {
-    pub log_level: Level,
+    pub log_level: log::Level,
     pub colored_output: bool,
     pub colored_output_forced: bool,
     pub buffer_client_receive_size: usize,
@@ -28,7 +27,7 @@ impl Config {
         init!("create default config");
 
         Config {
-            log_level: Level::Trace,
+            log_level: log::Level::Trace,
             colored_output: true,
             colored_output_forced: false,
             buffer_client_receive_size: 32,

@@ -1,11 +1,14 @@
-// vim: sw=4 et filetype=rust
-
 #![cfg(feature = "color")]
 
-use crate::util;
 use std::fmt;
+use crate::util;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct ColorizedText {
+    pub text: String,
+    pub color_code_length: usize
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Color {
     Reset = 1,
     Red,
@@ -36,53 +39,58 @@ impl Color {
         }
     }
 
-    fn colorize(self, text: &str) -> String {
-        format!(
+    fn colorize(self, text: &str) -> ColorizedText {
+        let color = self.write_foreground_code();
+        let reset_color = Color::Reset.write_foreground_code();
+        let text = format!(
             "{}{}{}",
-            self.write_foreground_code(),
+            color,
             text,
-            Color::Reset.write_foreground_code()
-        )
+            reset_color
+        );
+        let color_code_length = color.len() + reset_color.len();
+
+        ColorizedText { text, color_code_length }
     }
 }
 
 pub trait Colorize {
     #[allow(dead_code)]
-    fn colorize(&self, color: Color) -> String;
-    fn red(&self) -> String;
-    fn yellow(&self) -> String;
-    fn green(&self) -> String;
-    fn magenta(&self) -> String;
-    fn blue(&self) -> String;
-    fn cyan(&self) -> String;
+    fn colorize(&self, color: Color) -> ColorizedText;
+    fn red(&self) -> ColorizedText;
+    fn yellow(&self) -> ColorizedText;
+    fn green(&self) -> ColorizedText;
+    fn magenta(&self) -> ColorizedText;
+    fn blue(&self) -> ColorizedText;
+    fn cyan(&self) -> ColorizedText;
 }
 
-impl Colorize for &str {
-    fn colorize(&self, color: Color) -> String {
+impl Colorize for String {
+    fn colorize(&self, color: Color) -> ColorizedText {
         color.colorize(self)
     }
 
-    fn red(&self) -> String {
+    fn red(&self) -> ColorizedText {
         Color::Red.colorize(self)
     }
 
-    fn yellow(&self) -> String {
+    fn yellow(&self) -> ColorizedText {
         Color::Yellow.colorize(self)
     }
 
-    fn green(&self) -> String {
+    fn green(&self) -> ColorizedText {
         Color::Green.colorize(self)
     }
 
-    fn magenta(&self) -> String {
+    fn magenta(&self) -> ColorizedText {
         Color::Magenta.colorize(self)
     }
 
-    fn blue(&self) -> String {
+    fn blue(&self) -> ColorizedText {
         Color::Blue.colorize(self)
     }
 
-    fn cyan(&self) -> String {
+    fn cyan(&self) -> ColorizedText {
         Color::Cyan.colorize(self)
     }
 }
