@@ -1,7 +1,9 @@
-use crate::http_server::HttpServer;
-use crate::util;
 use std::fmt;
 use std::fmt::Formatter;
+
+use crate::http_server::HttpServer;
+use crate::util;
+use crate::Config;
 
 // fn new_http_server() -> HttpServer {
 //     HttpServer { config: Config::default(), log: Logger { level: Level::Trace } }
@@ -124,4 +126,84 @@ fn count_num_digits() {
     assert_eq!(util::num_digits(1_234_567), 7);
     assert_eq!(util::num_digits(12_345_678), 8);
     assert_eq!(util::num_digits(123_456_789), 9);
+}
+
+#[test]
+fn available_parallelism_or() {
+    let available = std::thread::available_parallelism().expect("Failed to get available_parallelism from std::thread").get();
+
+    assert_eq!(util::available_parallelism_or(0), 1);
+    assert_eq!(util::available_parallelism_or(1), 1);
+    assert_eq!(util::available_parallelism_or(2), 2);
+    assert_eq!(util::available_parallelism_or(available), available);
+    assert_eq!(util::available_parallelism_or(999_999_999_999), available);
+}
+
+#[test]
+fn highlighted_hex_vec() {
+    // highlighted_hex_vec(&buffer, request_data.len(), cfg)
+
+    let mut cfg = Config::default_from_env();
+    if !util::is_colored_output_avail(&cfg) {
+        cfg.colored_output = false;
+    }
+
+    // testing default
+    let buffer = vec![118, 247, 158, 120, 199, 236, 45, 23, 182, 121, 6, 13, 215, 239, 222, 18, 25, 39, 83, 10, 72, 45, 179, 205, 199, 226, 79, 249, 57, 36, 219, 193];
+    assert_eq!(util::highlighted_hex_vec(&buffer, 0, &cfg), "
+                                         0 = 76 f7 9e 78 c7 ec 2d 17 
+                                         8 = b6 79 06 \\r d7 ef de 12 
+                                        16 = 19 27 53 \\n 48 2d b3 cd 
+                                        24 = c7 e2 4f f9 39 24 db c1");
+    let buffer = vec![226, 222, 252, 182, 195, 97, 238, 236, 55, 247, 14, 72, 105, 44, 253, 105, 119, 29, 133, 156, 96, 207, 198, 172, 241, 82, 33, 32, 186, 164, 198, 244];
+    assert_eq!(util::highlighted_hex_vec(&buffer, buffer.len(), &cfg), "
+                                        32 = e2 de fc b6 c3 61 ee ec 
+                                        40 = 37 f7 0e 48 69 2c fd 69 
+                                        48 = 77 1d 85 9c 60 cf c6 ac 
+                                        56 = f1 52 21 20 ba a4 c6 f4");
+
+    cfg.colored_output = true;
+    cfg.colored_output_forced = true;
+    let buffer = vec![118, 247, 158, 120, 199, 236, 45, 23, 182, 121, 6, 13, 215, 239, 222, 18, 25, 39, 83, 10, 72, 45, 179, 205, 199, 226, 79, 249, 57, 36, 219, 193];
+    assert_eq!(util::highlighted_hex_vec(&buffer, 0, &cfg), "
+                                         0 = 76 f7 9e 78 c7 ec 2d 17 
+                                         8 = b6 79 06 \u{1b}[33m\\r\u{1b}[0m d7 ef de 12 
+                                        16 = 19 27 53 \u{1b}[33m\\n\u{1b}[0m 48 2d b3 cd 
+                                        24 = c7 e2 4f f9 39 24 db c1");
+    let buffer = vec![226, 222, 252, 182, 195, 97, 238, 236, 55, 247, 14, 72, 105, 44, 253, 105, 119, 29, 133, 156, 96, 207, 198, 172, 241, 82, 33, 32, 186, 164, 198, 244];
+    assert_eq!(util::highlighted_hex_vec(&buffer, buffer.len(), &cfg), "
+                                        32 = e2 de fc b6 c3 61 ee ec 
+                                        40 = 37 f7 0e 48 69 2c fd 69 
+                                        48 = 77 1d 85 9c 60 cf c6 ac 
+                                        56 = f1 52 21 20 ba a4 c6 f4");
+
+    cfg.colored_output = false;
+    cfg.colored_output_forced = true;
+    let buffer = vec![118, 247, 158, 120, 199, 236, 45, 23, 182, 121, 6, 13, 215, 239, 222, 18, 25, 39, 83, 10, 72, 45, 179, 205, 199, 226, 79, 249, 57, 36, 219, 193];
+    assert_eq!(util::highlighted_hex_vec(&buffer, 0, &cfg), "
+                                         0 = 76 f7 9e 78 c7 ec 2d 17 
+                                         8 = b6 79 06 \u{1b}[33m\\r\u{1b}[0m d7 ef de 12 
+                                        16 = 19 27 53 \u{1b}[33m\\n\u{1b}[0m 48 2d b3 cd 
+                                        24 = c7 e2 4f f9 39 24 db c1");
+    let buffer = vec![226, 222, 252, 182, 195, 97, 238, 236, 55, 247, 14, 72, 105, 44, 253, 105, 119, 29, 133, 156, 96, 207, 198, 172, 241, 82, 33, 32, 186, 164, 198, 244];
+    assert_eq!(util::highlighted_hex_vec(&buffer, buffer.len(), &cfg), "
+                                        32 = e2 de fc b6 c3 61 ee ec 
+                                        40 = 37 f7 0e 48 69 2c fd 69 
+                                        48 = 77 1d 85 9c 60 cf c6 ac 
+                                        56 = f1 52 21 20 ba a4 c6 f4");
+
+    cfg.colored_output = false;
+    cfg.colored_output_forced = false;
+    let buffer = vec![118, 247, 158, 120, 199, 236, 45, 23, 182, 121, 6, 13, 215, 239, 222, 18, 25, 39, 83, 10, 72, 45, 179, 205, 199, 226, 79, 249, 57, 36, 219, 193];
+    assert_eq!(util::highlighted_hex_vec(&buffer, 0, &cfg), "
+                                         0 = 76 f7 9e 78 c7 ec 2d 17 
+                                         8 = b6 79 06 \\r d7 ef de 12 
+                                        16 = 19 27 53 \\n 48 2d b3 cd 
+                                        24 = c7 e2 4f f9 39 24 db c1");
+    let buffer = vec![226, 222, 252, 182, 195, 97, 238, 236, 55, 247, 14, 72, 105, 44, 253, 105, 119, 29, 133, 156, 96, 207, 198, 172, 241, 82, 33, 32, 186, 164, 198, 244];
+    assert_eq!(util::highlighted_hex_vec(&buffer, buffer.len(), &cfg), "
+                                        32 = e2 de fc b6 c3 61 ee ec 
+                                        40 = 37 f7 0e 48 69 2c fd 69 
+                                        48 = 77 1d 85 9c 60 cf c6 ac 
+                                        56 = f1 52 21 20 ba a4 c6 f4");
 }

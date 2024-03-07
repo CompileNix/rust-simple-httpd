@@ -3,7 +3,6 @@
 
 // extern crate env_logger;
 // extern crate log;
-extern crate num_cpus;
 
 pub mod log;
 
@@ -70,7 +69,7 @@ async fn main() {
         .expect(&format!("Can't bind to {bind_addr}"));
     info!(cfg, "listening on {bind_addr}");
 
-    let worker_count = num_cpus::get();
+    let worker_count = util::available_parallelism_or(cfg.workers);
     let semaphore = Arc::new(Semaphore::new(worker_count));
 
     loop {

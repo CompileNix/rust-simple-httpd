@@ -16,6 +16,7 @@ struct_with_colorized_display_impl!(
         pub buffer_client_receive_size: usize,
         pub request_header_limit_bytes: usize,
         pub buffer_read_client_timeout: Duration,
+        pub workers: usize,
     }
 );
 
@@ -30,6 +31,7 @@ impl Config {
             buffer_client_receive_size: 32,
             request_header_limit_bytes: 4096,
             buffer_read_client_timeout: Duration::from_secs(3600),
+            workers: 0,
         }
     }
 

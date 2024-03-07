@@ -64,33 +64,31 @@ impl Log<'_> {
     }
 }
 
-#[cfg(feature = "color")]
 impl fmt::Display for Log<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let colored = util::is_colored_output_avail(self.config);
-
-        let level_text = if colored {
-            util::log_level_to_string_colorized(self.level).text
-        } else {
-            self.level.to_string()
-        };
-
-        let log_message_prefix =
-            crate::util::format_log_message_prefix(&self.time.clone(), &level_text, colored);
-        let log_message = format!("{log_message_prefix}{}", self.message);
-        util::format_with_options(&log_message, f)
-    }
-}
-
-#[cfg(not(feature = "color"))]
-impl fmt::Display for Log<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // config is only used when color feature is enabled
-        let _ = self.config;
+        let level_text: String;
+        let colored: bool;
+        #[cfg(feature = "color")]
+        {
+            colored = util::is_colored_output_avail(self.config);
+            level_text = if colored {
+                util::log_level_to_string_colorized(self.level).text
+            } else {
+                self.level.to_string()
+            };
+        }
+        #[cfg(not(feature = "color"))]
+        {
+            // config is only used when color feature is enabled
+            let _ = self.config;
+            colored = false;
+            level_text = self.level.to_string();
+        }
 
         let log_message_prefix =
-            util::format_log_message_prefix(&self.time.clone(), &self.level.to_string(), false);
+            util::format_log_message_prefix(&self.time.clone(), &level_text, colored);
         let log_message = format!("{log_message_prefix}{}", self.message);
+
         util::format_with_options(&log_message, f)
     }
 }
@@ -150,7 +148,7 @@ macro_rules! error {
         #[cfg(feature = "log-err")]
         {
             if $config.log_level >= Level::Error {
-                error(&mut $config, &std::fmt::format(format_args!($($arg)*)));
+                error($config, &std::fmt::format(format_args!($($arg)*)));
             }
         }
     }};

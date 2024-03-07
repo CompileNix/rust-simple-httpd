@@ -152,7 +152,7 @@ fn write_formatted_eol_byte(byte: u8, config: &Config) -> String {
     match byte {
         b'\r' => {
             let replacement = String::from(r"\r");
-            if config.colored_output {
+            if is_colored_output_avail(config) {
                 replacement.colorize(eol_color).text.to_string()
             } else {
                 replacement.to_string()
@@ -160,7 +160,7 @@ fn write_formatted_eol_byte(byte: u8, config: &Config) -> String {
         }
         b'\n' => {
             let replacement = String::from(r"\n");
-            if config.colored_output {
+            if is_colored_output_avail(config) {
                 replacement.colorize(eol_color).text.to_string()
             } else {
                 replacement.to_string()
@@ -303,32 +303,29 @@ pub fn log_level_to_string_colorized(level: crate::log::Level) -> crate::color::
     }
 }
 
-// #[cfg(feature = "color")]
-// #[cfg(not(feature = "color"))]
-
 #[cfg(feature = "log-trace")]
 pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> String {
-    let mut output = String::new();
+    let mut output = String::with_capacity(250); // this size is rather small but also very rarely to small
     let digits = num_digits(index_offset + vec.len());
 
+    let format_log_message_prefix_length: usize;
     #[cfg(feature = "color")]
-    let colorized_text = log_level_to_string_colorized(crate::log::Level::Trace);
-    #[cfg(feature = "color")]
-    let format_log_message_prefix = format_log_message_prefix(
-        &new_time_string(),
-        &colorized_text.text,
-        config.colored_output,
-    );
-    #[cfg(feature = "color")]
-    let format_log_message_prefix_length =
-        format_log_message_prefix.len() - colorized_text.color_code_length;
-
+    {
+        let colorized_text = log_level_to_string_colorized(crate::log::Level::Trace);
+        let format_log_message_prefix = format_log_message_prefix(
+            &new_time_string(),
+            &colorized_text.text,
+            is_colored_output_avail(config),
+        );
+        format_log_message_prefix_length =
+            format_log_message_prefix.len() - colorized_text.color_code_length;
+    }
     #[cfg(not(feature = "color"))]
-    let text = crate::log::Level::Trace.to_string();
-    #[cfg(not(feature = "color"))]
-    let format_log_message_prefix = format_log_message_prefix(&new_time_string(), &text, false);
-    #[cfg(not(feature = "color"))]
-    let format_log_message_prefix_length = format_log_message_prefix.len();
+    {
+        let text = crate::log::Level::Trace.to_string();
+        let format_log_message_prefix = format_log_message_prefix(&new_time_string(), &text, false);
+        format_log_message_prefix_length = format_log_message_prefix.len();
+    }
 
     for (index, byte) in vec.iter().enumerate() {
         if index != 0 {
@@ -346,4 +343,26 @@ pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> 
     }
 
     output
+}
+
+pub fn available_parallelism_or(default: usize) -> usize {
+    // num_cpus::get()
+
+    let max = if default > 0 {
+        default
+    } else {
+        1
+    };
+
+    match std::thread::available_parallelism() {
+        Ok(x) => {
+            let x = x.get();
+            if x > max {
+                max
+            } else {
+                x
+            }
+        }
+        Err(_) => max
+    }
 }
