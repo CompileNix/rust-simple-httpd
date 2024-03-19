@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["log-verb", "color"]
+default = ["color", "log-trace"]
 color = []
 humantime = ["time/local-offset"]
 log-err = []
@@ -17,7 +17,9 @@ log-trace = ["log-debug"]
 [dependencies]
 anyhow = "1"
 indoc = "2"
+serde = { version = "1.0.197", features = ["derive"] }
 signal-hook = "0"
 time = { version = "0", features = [ "formatting", "serde-well-known" ] }
 tokio = { version = "1", default-features = false, features = ["net", "io-util", "rt", "fs", "time", "sync", "tokio-macros", "macros", "rt-multi-thread"] }
+toml = "0.8.10"
 

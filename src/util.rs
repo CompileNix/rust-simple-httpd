@@ -14,7 +14,7 @@ use crate::config::Config;
 macro_rules! enum_with_helpers {
     ($vis:vis enum $name:ident { $($variant:ident),+ $(,)? } default: $default_variant:ident) => {
         #[repr(usize)]
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, serde::Serialize)]
         $vis enum $name {
             $($variant),+
         }
@@ -92,7 +92,7 @@ macro_rules! struct_with_colorized_display_impl {
             )*
         }
     ) => {
-        #[derive(Clone, Debug, Hash, Default)]
+        #[derive(Clone, Debug, Hash, Default, serde::Serialize)]
         $vis_struct struct $name {
             $(
                 $vis_field $field: $type
