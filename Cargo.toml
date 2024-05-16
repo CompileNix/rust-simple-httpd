@@ -17,8 +17,6 @@ log-trace = ["log-debug"]
 [dependencies]
 anyhow = "1"
 indoc = "2"
-serde = { version = "1.0.197", features = ["derive"] }
 signal-hook = "0"
-time = { version = "0", features = [ "formatting", "serde-well-known" ] }
-toml = "0.8.10"
+time = { version = "0", features = [ "formatting" ] }
 
