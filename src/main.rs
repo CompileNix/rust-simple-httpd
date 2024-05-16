@@ -63,6 +63,6 @@ fn main() {
             }
         });
 
-    let server = http_server::HttpServer::new(cfg.clone(), receiver, sender);
+    let server = http_server::HttpServer::new(cfg, receiver, sender);
     let _ = server.serve();
 }

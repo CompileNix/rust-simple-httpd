@@ -26,23 +26,28 @@ macro_rules! enum_with_helpers {
             }
         }
 
+        use std::str::FromStr;
+        pub struct ParseEnumError;
+        impl FromStr for $name {
+            type Err = ParseEnumError;
+
+            /// Function to convert a &str to an enum variant
+            fn from_str(s: &str) -> Result<Level, ParseEnumError> {
+                match s.to_lowercase().as_str() {
+                    $(
+                        _s if _s == stringify!($variant).to_lowercase() => Ok($name::$variant),
+                    )+
+                    _ => Err(ParseEnumError),
+                }
+            }
+        }
+
         impl $name {
             /// Function to convert a usize to an enum variant
             #[must_use]
             pub fn from_usize(u: usize) -> Option<Self> {
                 match u {
                     $(x if x == $name::$variant as usize => Some($name::$variant),)+
-                    _ => None,
-                }
-            }
-
-            /// Function to convert a &str to an enum variant
-            #[must_use]
-            pub fn from_str(s: &str) -> Option<Self> {
-                match s.to_lowercase().as_str() {
-                    $(
-                        _s if _s == stringify!($variant).to_lowercase() => Some($name::$variant),
-                    )+
                     _ => None,
                 }
             }

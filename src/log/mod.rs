@@ -30,7 +30,7 @@ impl TryFrom<&str> for Level {
     type Error = &'static str;
 
     fn try_from(value: &str) -> Result<Self, <Level as TryFrom<&str>>::Error> {
-        if let Some(val) = Self::from_str(value) {
+        if let Ok(val) = Self::from_str(value) {
             Ok(val)
         } else {
             Err("Unknown log level provided")

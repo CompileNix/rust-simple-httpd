@@ -6,11 +6,8 @@ use crate::{trace, debug, verb, warn, info};
 use anyhow::{anyhow, Result};
 use indoc::formatdoc;
 use std::any::Any;
-use std::collections::HashMap;
-use std::fs::File;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::Path;
 use std::sync::mpsc::SendError;
 use std::thread;
 use std::sync::{mpsc, Arc, Mutex};
@@ -61,7 +58,7 @@ impl ThreadPool {
         let mut workers = Vec::with_capacity(worker_count);
 
         for id in 0..worker_count {
-            workers.push(Worker::new(id, Arc::clone(&receiver), config.clone()));
+            workers.push(Worker::new(id, Arc::clone(&receiver), cfg));
         }
 
         ThreadPool { workers, sender, config }
@@ -108,7 +105,7 @@ impl Worker {
     #[must_use] fn new(
         id: usize,
         receiver: Arc<Mutex<mpsc::Receiver<WorkerMessage>>>,
-        config: Config,
+        config: &Config,
     ) -> Worker {
         let thread_cfg = config.clone();
         let thread = thread::Builder::new()
@@ -183,7 +180,7 @@ pub struct HttpServer {
 
 impl HttpServer {
     pub fn new(
-        config: Config,
+        config: &Config,
         receiver: Arc<Mutex<mpsc::Receiver<ConnectionHandlerMessage>>>,
         sender: mpsc::Sender<ConnectionHandlerMessage>,
     ) -> HttpServer {
@@ -476,8 +473,8 @@ impl HttpServer {
         let request_body = String::new();
 
         verb!(cfg, "[{worker_id}]: Request headers:\n{request_headers}");
-        let mut file = File::create("request_headers.txt").unwrap();
-        file.write_all(request_headers.as_bytes()).unwrap();
+        // let mut file = File::create("request_headers.txt").unwrap();
+        // file.write_all(request_headers.as_bytes()).unwrap();
         verb!(cfg, "[{worker_id}]: Request body:\n{request_body}");
         // let mut file = File::create("request_body.txt").unwrap();
         // file.write_all(request_body.as_bytes()).unwrap();
@@ -509,26 +506,30 @@ impl HttpServer {
         //    return Ok(());
         //}
 
-        let mut files = HashMap::new();
-        if Path::new("index.html").exists() {
-            let mut contents = String::new();
-            File::open("index.html")
-                .expect(r#"Unable to open file "index.html" for reading"#)
-                .read_to_string(&mut contents)
-                .expect(r#"error while reading "index.html" into a `String` type"#);
-            files.insert(String::from("/index.html"), contents);
-        }
+        // let mut files = HashMap::new();
+        // if Path::new("index.html").exists() {
+        //     let mut contents = String::new();
+        //     File::open("index.html")
+        //         .expect(r#"Unable to open file "index.html" for reading"#)
+        //         .read_to_string(&mut contents)
+        //         .expect(r#"error while reading "index.html" into a `String` type"#);
+        //     files.insert(String::from("/index.html"), contents);
+        // }
 
-        let mut status_code = 404;
-        let mut status_message = "Not Found";
-        let mut body = String::from("Not Found\n");
-        let mut content_type = "text/plain; charset=utf-8";
-        if let Some(x) = files.get("/index.html") {
-            body = x.into();
-            status_code = 200;
-            status_message = "OK";
-            content_type = "text/html; charset=utf-8";
-        }
+        // let mut status_code = 404;
+        // let mut status_message = "Not Found";
+        // let mut body = String::from("Not Found\n");
+        // let mut content_type = "text/plain; charset=utf-8";
+        // if let Some(x) = files.get("/index.html") {
+        //     body = x.into();
+        //     status_code = 200;
+        //     status_message = "OK";
+        //     content_type = "text/html; charset=utf-8";
+        // }
+        let status_code = 200;
+        let status_message = "OK";
+        let body = String::from("<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"utf-8\">\n    <title>Hello!</title>\n</head>\n\n<body>\n    <h1>Hello!</h1>\n    <p>Hi from Rust</p>\n</body>\n\n</html>\n");
+        let content_type = "text/plain; charset=utf-8";
 
         let response_headers = Self::compose_http_response_headers(body.len(), content_type);
         let response = Self::compose_http_response(

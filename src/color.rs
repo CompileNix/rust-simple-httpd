@@ -1,5 +1,3 @@
-#![cfg(feature = "color")]
-
 use crate::util;
 use std::fmt;
 
