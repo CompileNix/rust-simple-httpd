@@ -1,6 +1,6 @@
 use std::env;
 use std::fmt;
-use tokio::time::Duration;
+use std::time::Duration;
 
 use crate::util::new_time_string;
 use crate::{init, log, struct_with_colorized_display_impl, util};
@@ -16,7 +16,9 @@ struct_with_colorized_display_impl!(
         pub buffer_client_receive_size: usize,
         pub request_header_limit_bytes: usize,
         pub buffer_read_client_timeout: Duration,
+        pub buffer_write_client_timeout: Duration,
         pub workers: usize,
+        pub bind_addr: String,
     }
 );
 
@@ -31,7 +33,9 @@ impl Config {
             buffer_client_receive_size: 32,
             request_header_limit_bytes: 4096,
             buffer_read_client_timeout: Duration::from_secs(3600),
+            buffer_write_client_timeout: Duration::from_secs(3600),
             workers: 0,
+            bind_addr: "127.0.0.1:8000".to_string(),
         }
     }
 

@@ -20,6 +20,5 @@ indoc = "2"
 serde = { version = "1.0.197", features = ["derive"] }
 signal-hook = "0"
 time = { version = "0", features = [ "formatting", "serde-well-known" ] }
-tokio = { version = "1", default-features = false, features = ["net", "io-util", "rt", "fs", "time", "sync", "tokio-macros", "macros", "rt-multi-thread"] }
 toml = "0.8.10"
 

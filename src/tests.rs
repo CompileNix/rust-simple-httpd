@@ -129,14 +129,14 @@ fn count_num_digits() {
 }
 
 #[test]
-fn available_parallelism_or() {
+fn available_parallelism_capped() {
     let available = std::thread::available_parallelism().expect("Failed to get available_parallelism from std::thread").get();
 
-    assert_eq!(util::available_parallelism_or(0), 1);
-    assert_eq!(util::available_parallelism_or(1), 1);
-    assert_eq!(util::available_parallelism_or(2), 2);
-    assert_eq!(util::available_parallelism_or(available), available);
-    assert_eq!(util::available_parallelism_or(999_999_999_999), available);
+    assert_eq!(util::available_parallelism_capped_at(0), available);
+    assert_eq!(util::available_parallelism_capped_at(1), 1);
+    assert_eq!(util::available_parallelism_capped_at(2), 2);
+    assert_eq!(util::available_parallelism_capped_at(available), available);
+    assert_eq!(util::available_parallelism_capped_at(999_999_999_999), available);
 }
 
 #[test]

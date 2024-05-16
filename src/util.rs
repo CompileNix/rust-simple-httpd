@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io::IsTerminal;
+use std::num::NonZero;
 
 #[cfg(feature = "humantime")]
 use time::util::local_offset::Soundness;
@@ -345,24 +346,13 @@ pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> 
     output
 }
 
-pub fn available_parallelism_or(default: usize) -> usize {
-    // num_cpus::get()
+pub fn available_parallelism_capped_at(max: usize) -> usize {
+    let one = NonZero::new(1).expect("Somehow 1 is equal to 0 🤷");
+    let avail = std::thread::available_parallelism().unwrap_or(one).get();
 
-    let max = if default > 0 {
-        default
-    } else {
-        1
-    };
-
-    match std::thread::available_parallelism() {
-        Ok(x) => {
-            let x = x.get();
-            if x > max {
-                max
-            } else {
-                x
-            }
-        }
-        Err(_) => max
+    match max {
+        0 => avail,
+        max if max < avail => max,
+        _ => avail,
     }
 }
