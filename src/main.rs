@@ -8,19 +8,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::Config;
-use crate::log::Level;
-use crate::log::{debug, info, trace, verb, warn, error};
+use crate::log::{Level, debug, info, trace, verb, warn, error};
 use signal_hook::consts::{SIGINT, SIGQUIT};
 use signal_hook::iterator::Signals;
 
+#[cfg(test)]
+mod tests;
 #[cfg(feature = "color")]
 mod color;
 mod config;
-mod http_server;
-pub mod log;
-#[cfg(test)]
-mod tests;
+mod http;
+mod log;
 mod util;
+mod worker;
+mod tcp;
 
 #[allow(unused_variables, unused_assignments, clippy::unwrap_used)]
 fn main() {
@@ -53,7 +54,7 @@ fn main() {
 
                 info!(cfg, "Received process signal {signal_text}");
 
-                sender_signal.send(http_server::ConnectionHandlerMessage::Shutdown).unwrap_or_default();
+                sender_signal.send(tcp::ConnectionHandlerMessage::Shutdown).unwrap_or_default();
 
                 // Give the application 10 seconds to gracefully shutdown
                 thread::sleep(Duration::from_secs(10));
@@ -63,6 +64,6 @@ fn main() {
             }
         });
 
-    let server = http_server::HttpServer::new(cfg, receiver, sender);
+    let server = http::Server::new(cfg, receiver, sender);
     let _ = server.serve();
 }

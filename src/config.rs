@@ -30,7 +30,7 @@ impl Config {
             log_level: log::Level::Trace,
             colored_output: true,
             colored_output_forced: false,
-            buffer_client_receive_size: 32,
+            buffer_client_receive_size: 64,
             request_header_limit_bytes: 4096,
             buffer_read_client_timeout: Duration::from_secs(3600),
             buffer_write_client_timeout: Duration::from_secs(3600),

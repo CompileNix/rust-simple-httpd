@@ -1,199 +1,35 @@
 use crate::config::Config;
 #[cfg(feature = "log-trace")]
 use crate::util::highlighted_hex_vec;
-use crate::{util, Level};
-use crate::{trace, debug, verb, warn, info};
+use crate::Level;
+use crate::{debug, trace, verb, warn};
 use anyhow::{anyhow, Result};
 use indoc::formatdoc;
 use std::any::Any;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc::SendError;
+use std::net::TcpStream;
 use std::thread;
-use std::sync::{mpsc, Arc, Mutex};
-
-enum WorkerMessage {
-    NewJob(Job),
-    Shutdown,
-}
-
-pub(crate) enum ConnectionHandlerMessage {
-    NewConnection(TcpStream),
-    Shutdown,
-}
-
-struct ThreadPool {
-    workers: Vec<Worker>,
-    sender: mpsc::Sender<WorkerMessage>,
-    config: Config,
-}
-
-trait FnBox {
-    fn call_box(self: Box<Self>, worker_id: usize);
-}
-
-impl<F: FnOnce(usize)> FnBox for F {
-    fn call_box(self: Box<F>, worker_id: usize) { (*self)(worker_id); }
-}
-
-type Job = Box<dyn FnBox + Send + 'static>;
-
-impl ThreadPool {
-    /// Create a new `ThreadPool`.
-    ///
-    /// The size is the number of threads in the pool.
-    ///
-    /// # Panics
-    ///
-    /// The `new` function will panic if the size is zero.
-    #[must_use] fn new(config: Config) -> ThreadPool {
-        let cfg = &config;
-
-        let worker_count = util::available_parallelism_capped_at(config.workers);
-        assert!(worker_count > 0);
-        info!(cfg, "starting with {worker_count} threads");
-
-        let (sender, receiver) = mpsc::channel();
-        let receiver = Arc::new(Mutex::new(receiver));
-        let mut workers = Vec::with_capacity(worker_count);
-
-        for id in 0..worker_count {
-            workers.push(Worker::new(id, Arc::clone(&receiver), cfg));
-        }
-
-        ThreadPool { workers, sender, config }
-    }
-
-    /// Execute a function on the `ThreadPool`.
-    ///
-    /// # Errors
-    /// A return value of `Err` means that the data will never be received, but a return value of
-    /// `Ok` does not mean that the data will be received. It is possible for the corresponding
-    /// receiver to hang up immediately after this function returns `Ok`.
-    fn execute<F>(&self, f: F)  -> Result<(), SendError<WorkerMessage>>
-        where F: FnOnce(usize) + Send + 'static, {
-
-        self.sender.send(WorkerMessage::NewJob(Box::new(f)))
-    }
-}
-
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        let cfg = &self.config;
-        debug!(cfg, "Thread pool: received shutdown signal");
-
-        trace!(cfg, "Thread pool: sending shutdown message to all {} workers", self.workers.len());
-        for _ in &mut self.workers {
-            self.sender.send(WorkerMessage::Shutdown).unwrap();
-        }
-
-        debug!(cfg, "Thread pool: waiting for all workers to stop");
-        for worker in &mut self.workers {
-            if let Some(thread) = worker.thread.take() {
-                thread.join().unwrap();
-            }
-        }
-        debug!(cfg, "Thread pool: all workers completed");
-    }
-}
-
-struct Worker {
-    thread: Option<thread::JoinHandle<()>>,
-}
-
-impl Worker {
-    #[must_use] fn new(
-        id: usize,
-        receiver: Arc<Mutex<mpsc::Receiver<WorkerMessage>>>,
-        config: &Config,
-    ) -> Worker {
-        let thread_cfg = config.clone();
-        let thread = thread::Builder::new()
-            .name(format!("Worker {id}"))
-            .spawn(move || loop {
-            let message = receiver.lock().unwrap().recv().unwrap();
-
-            match message {
-                WorkerMessage::NewJob(job) => {
-                    job.call_box(id);
-                }
-                WorkerMessage::Shutdown => {
-                    trace!(&thread_cfg, "Worker {id}: shutdown");
-                    break;
-                }
-            }
-        }).unwrap();
-
-        Worker {
-            thread: Some(thread),
-        }
-    }
-}
+use std::sync::{Arc, mpsc, Mutex};
+use crate::tcp::{ConnectionHandler, ConnectionHandlerMessage};
 
 #[derive(Debug)]
-struct ConnectionHandler {
-    thread: thread::JoinHandle<()>,
-}
-
-impl ConnectionHandler {
-    /// Creates new `ConnectionHandler` instance.
-    ///
-    /// # Panics
-    /// When `thread_count` is less then 1
-    #[must_use]
-    fn new(
-        receiver: Arc<Mutex<mpsc::Receiver<ConnectionHandlerMessage>>>,
-        config: &Config,
-    ) -> ConnectionHandler {
-        let thread_pool = ThreadPool::new(config.clone());
-
-        let connection_handler_config = config.clone();
-        let thread = thread::Builder::new()
-            .name("ConnectionHandler".into())
-            .spawn(move || loop {
-            let cfg = connection_handler_config.clone();
-            let message = receiver.lock().unwrap().recv().unwrap();
-
-            match message {
-                ConnectionHandlerMessage::NewConnection(mut stream) => {
-                    verb!(&cfg, "ConnectionHandler: received a new connection from HTTP Server");
-                    thread_pool.execute(move |worker_id| {
-                        trace!(&cfg, "[{worker_id}]: received a new job from the thread pool of the connection handler");
-                        HttpServer::handle_connection(&mut stream, worker_id, &cfg);
-                    }).unwrap();
-                }
-                ConnectionHandlerMessage::Shutdown => {
-                    verb!(&cfg, "ConnectionHandler: received shutdown signal");
-                    break;
-                }
-            }
-        }).unwrap();
-
-        ConnectionHandler { thread }
-    }
-}
-
-#[derive(Debug)]
-pub struct HttpServer {
+pub struct Server {
     connection_handler: ConnectionHandler,
 }
 
-impl HttpServer {
+impl Server {
     pub fn new(
         config: &Config,
         receiver: Arc<Mutex<mpsc::Receiver<ConnectionHandlerMessage>>>,
         sender: mpsc::Sender<ConnectionHandlerMessage>,
-    ) -> HttpServer {
+    ) -> Server {
         let config = config.clone();
-        let cfg = &config;
-
-        let listener = TcpListener::bind(config.bind_addr.clone()).expect(&format!("Can't bind to {}", cfg.bind_addr));
-        info!(cfg, "listening on {}", cfg.bind_addr);
 
         let connection_handler = ConnectionHandler::new(
             receiver,
-            &config.clone(),
+            config.clone(),
         );
+        let listener = connection_handler.bind();
 
         let listener_config = config.clone();
         let listener_handler = listener.try_clone().unwrap();
@@ -213,7 +49,7 @@ impl HttpServer {
             }
         });
 
-        HttpServer { connection_handler }
+        Server { connection_handler }
     }
 
     pub fn serve(self) -> Result<(), Box<dyn Any + Send>> {
@@ -243,7 +79,7 @@ impl HttpServer {
     /// let index = bytes_contain_eoh(data);
     /// assert_eq!(index, Some(41));
     /// ```
-    pub(crate) fn bytes_contain_eoh(content: &[u8]) -> Option<usize> {
+    pub fn bytes_contain_eoh(content: &[u8]) -> Option<usize> {
         let eoh_sequence = b"\r\n\r\n"; // 0x0d, 0x0a, 0x0d, 0x0a
 
         if content.len() < eoh_sequence.len() {
@@ -277,7 +113,7 @@ impl HttpServer {
         content-type: {content_type}\r
         content-length: {content_len}\r
         connection: close",
-            date = HttpServer::new_date_time_http_rfc(),
+            date = Server::new_date_time_http_rfc(),
         };
         headers
     }
