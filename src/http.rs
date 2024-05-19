@@ -365,7 +365,7 @@ impl Server {
         let status_code = 200;
         let status_message = "OK";
         let body = String::from("<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"utf-8\">\n    <title>Hello!</title>\n</head>\n\n<body>\n    <h1>Hello!</h1>\n    <p>Hi from Rust</p>\n</body>\n\n</html>\n");
-        let content_type = "text/plain; charset=utf-8";
+        let content_type = "text/html; charset=utf-8";
 
         let response_headers = Self::compose_http_response_headers(body.len(), content_type);
         let response = Self::compose_http_response(

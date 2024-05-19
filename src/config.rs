@@ -10,15 +10,15 @@ use crate::color::Colorize;
 
 struct_with_colorized_display_impl!(
     pub struct Config {
-        pub log_level: log::Level,
-        pub colored_output: bool,
-        pub colored_output_forced: bool,
+        pub bind_addr: String,
         pub buffer_client_receive_size: usize,
-        pub request_header_limit_bytes: usize,
         pub buffer_read_client_timeout: Duration,
         pub buffer_write_client_timeout: Duration,
+        pub colored_output: bool,
+        pub colored_output_forced: bool,
+        pub log_level: log::Level,
+        pub request_header_limit_bytes: usize,
         pub workers: usize,
-        pub bind_addr: String,
     }
 );
 
@@ -27,15 +27,15 @@ impl Config {
         init!("create default config");
 
         Config {
-            log_level: log::Level::Trace,
-            colored_output: true,
-            colored_output_forced: false,
-            buffer_client_receive_size: 64,
-            request_header_limit_bytes: 4096,
+            bind_addr: "127.0.0.1:8000".to_string(),
+            buffer_client_receive_size: 32,
             buffer_read_client_timeout: Duration::from_secs(3600),
             buffer_write_client_timeout: Duration::from_secs(3600),
+            colored_output: true,
+            colored_output_forced: false,
+            log_level: log::Level::Trace,
+            request_header_limit_bytes: 4096,
             workers: 0,
-            bind_addr: "127.0.0.1:8000".to_string(),
         }
     }
 
