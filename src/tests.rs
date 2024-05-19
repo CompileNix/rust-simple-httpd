@@ -1,13 +1,28 @@
 use std::fmt;
 use std::fmt::Formatter;
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::sync::Mutex;
 
+use rand::Rng;
+use reqwest::StatusCode;
+
+use crate::http;
 use crate::http::Server;
+use crate::log;
+use crate::tcp;
 use crate::util;
 use crate::Config;
 
-// fn new_http_server() -> HttpServer {
-//     HttpServer { config: Config::default(), log: Logger { level: Level::Trace } }
-// }
+fn get_random_port() -> isize {
+    let mut rng = rand::thread_rng();
+    let range = 20000..=40000;
+    rng.gen_range(range)
+}
+
+fn get_random_local_bind_addr() -> String {
+    format!("127.0.0.1:{}", get_random_port())
+}
 
 #[test]
 fn bytes_contain_end_of_http_headers_full_example() {
@@ -148,7 +163,7 @@ fn highlighted_hex_vec() {
         cfg.colored_output = false;
     }
 
-    // testing default
+    cfg.colored_output = false;
     let buffer = vec![118, 247, 158, 120, 199, 236, 45, 23, 182, 121, 6, 13, 215, 239, 222, 18, 25, 39, 83, 10, 72, 45, 179, 205, 199, 226, 79, 249, 57, 36, 219, 193];
     assert_eq!(util::highlighted_hex_vec(&buffer, 0, &cfg), "
                                          0 = 76 f7 9e 78 c7 ec 2d 17 
@@ -206,4 +221,35 @@ fn highlighted_hex_vec() {
                                         40 = 37 f7 0e 48 69 2c fd 69 
                                         48 = 77 1d 85 9c 60 cf c6 ac 
                                         56 = f1 52 21 20 ba a4 c6 f4");
+}
+
+#[tokio::test]
+async fn http_server_simple_valid_request() {
+    let mut cfg = Config::default_from_env();
+    cfg.log_level = log::Level::Trace;
+    cfg.bind_addr = get_random_local_bind_addr();
+    let cfg = &cfg;
+
+    let (sender, receiver) = mpsc::channel::<tcp::ConnectionHandlerMessage>();
+    let receiver = Arc::new(Mutex::new(receiver));
+    let server = http::Server::new(cfg, receiver, sender.clone());
+
+    // Do the testing
+    let url = format!("http://{}/", cfg.bind_addr);
+    let response = reqwest::get(url).await;
+
+    assert!(response.is_ok());
+    let response = response.ok();
+
+    assert!(response.is_some());
+    let response = response.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("server").unwrap(), "rust-simple-httpd");
+    assert_eq!(response.headers().get("content-type").unwrap(), "text/html; charset=utf-8");
+    assert_eq!(response.headers().get("connection").unwrap(), "close");
+    assert_eq!(response.text().await.unwrap(), "<!DOCTYPE html>\n<html lang=\"en\">\n\n<head>\n    <meta charset=\"utf-8\">\n    <title>Hello!</title>\n</head>\n\n<body>\n    <h1>Hello!</h1>\n    <p>Hi from Rust</p>\n</body>\n\n</html>\n");
+
+    sender.send(tcp::ConnectionHandlerMessage::Shutdown).unwrap_or_default();
+    let _ = server.serve();
 }
