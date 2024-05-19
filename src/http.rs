@@ -268,8 +268,13 @@ impl Server {
                 break;
             }
 
-            // append buffer to request_data and check if the client is done with sending request headers
+            // copy trimmed buffer contents to request_data
             request_data.extend(buffer_trimmed);
+
+            // reset buffer
+            buffer.fill(0);
+
+            // check if the client is done with sending request headers
             if let Some(eoh_byte_index) = Self::bytes_contain_eoh(request_data.as_slice()) {
                 debug!(cfg, "[{worker_id}]: EOH sequence found at {eoh_byte_index}");
                 request_headers = request_data.get(..eoh_byte_index).unwrap().to_vec();
@@ -283,7 +288,6 @@ impl Server {
                 break;
             }
         }
-        buffer.fill(0);
 
         if request_header_incomplete {
             warn!(
