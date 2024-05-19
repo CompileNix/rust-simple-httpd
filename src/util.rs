@@ -311,7 +311,7 @@ pub fn log_level_to_string_colorized(level: crate::log::Level) -> crate::color::
 
 #[cfg(feature = "log-trace")]
 pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> String {
-    let mut output = String::with_capacity(250); // this size is rather small but also very rarely to small
+    let mut output = String::with_capacity(250); // this size is rather small but also very rarely too small
     let digits = num_digits(index_offset + vec.len());
 
     let format_log_message_prefix_length: usize;

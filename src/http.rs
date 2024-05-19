@@ -24,6 +24,7 @@ impl Server {
         sender: mpsc::Sender<ConnectionHandlerMessage>,
     ) -> Server {
         let config = config.clone();
+        let cfg = &config;
 
         let connection_handler = ConnectionHandler::new(
             receiver,
@@ -31,6 +32,7 @@ impl Server {
         );
         let listener = connection_handler.bind();
 
+        trace!(cfg, "Start TcpListener thread");
         let listener_config = config.clone();
         let listener_handler = listener.try_clone().unwrap();
         let _ = thread::Builder::new()
@@ -47,6 +49,10 @@ impl Server {
                     }
                 }
             }
+            // NOTE: unreachable under normal circumstances. Graceful shutdown
+            // can't be passed into TcpListener thread, because it's usually
+            // waiting on `incoming()` for a new connection.
+            trace!(cfg, "TcpListener thread shutdown");
         });
 
         Server { connection_handler }

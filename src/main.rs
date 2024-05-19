@@ -31,10 +31,12 @@ fn main() {
     }
     let cfg = &cfg;
 
-    verb!(cfg, "We are using the following config: {cfg}");
+    verb!(cfg, "final config: {cfg}");
 
     let (sender, receiver) = mpsc::channel();
     let receiver = Arc::new(Mutex::new(receiver));
+
+    trace!(cfg, "Start ProcessSignalHandler thread");
     let sender_signal = sender.clone();
     let signal_handler_config = cfg.clone();
     let _ = thread::Builder::new()
@@ -52,13 +54,13 @@ fn main() {
                     signal_text = "SIGQUIT".into();
                 }
 
-                info!(cfg, "Received process signal {signal_text}");
+                info!(cfg, "ProcessSignalHandler: Received process signal {signal_text}");
 
                 sender_signal.send(tcp::ConnectionHandlerMessage::Shutdown).unwrap_or_default();
 
-                // Give the application 10 seconds to gracefully shutdown
+                trace!(cfg, "ProcessSignalHandler: shutdown signal sent, waiting up to 10 seconds for graceful shutdown");
                 thread::sleep(Duration::from_secs(10));
-                error!(cfg, "application did not shutdown within 10 seconds, force terminate");
+                error!(cfg, "ProcessSignalHandler: application did not shutdown within 10 seconds, force terminate");
                 process::exit(1);
                 // process::exit(0);
             }

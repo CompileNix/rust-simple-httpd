@@ -27,29 +27,34 @@ impl ConnectionHandler {
         receiver: Arc<Mutex<mpsc::Receiver<ConnectionHandlerMessage>>>,
         config: Config,
     ) -> ConnectionHandler {
+        let cfg = config.clone();
         let thread_pool = ThreadPool::new(config.clone());
 
         let connection_handler_config = config.clone();
+        trace!(&cfg, "Start ConnectionHandler thread");
         let thread = thread::Builder::new()
             .name("ConnectionHandler".into())
-            .spawn(move || loop {
-            let cfg = connection_handler_config.clone();
-            let message = receiver.lock().unwrap().recv().unwrap();
+            .spawn(move || {
+                loop {
+                    let cfg = connection_handler_config.clone();
+                    let message = receiver.lock().unwrap().recv().unwrap();
 
-            match message {
-                ConnectionHandlerMessage::NewConnection(mut stream) => {
-                    verb!(&cfg, "ConnectionHandler: received a new connection from HTTP Server");
-                    thread_pool.execute(move |worker_id| {
-                        trace!(&cfg, "[{worker_id}]: received a new job from the thread pool of the connection handler");
-                        Server::handle_connection(&mut stream, worker_id, &cfg);
-                    }).unwrap();
+                    match message {
+                        ConnectionHandlerMessage::NewConnection(mut stream) => {
+                            verb!(&cfg, "ConnectionHandler: received a new connection from HTTP Server");
+                            thread_pool.execute(move |worker_id| {
+                                trace!(&cfg, "[{worker_id}]: received a new job from the thread pool of the connection handler");
+                                Server::handle_connection(&mut stream, worker_id, &cfg);
+                            }).unwrap();
+                        }
+                        ConnectionHandlerMessage::Shutdown => {
+                            verb!(&cfg, "ConnectionHandler: received shutdown signal");
+                            break;
+                        }
+                    }
                 }
-                ConnectionHandlerMessage::Shutdown => {
-                    verb!(&cfg, "ConnectionHandler: received shutdown signal");
-                    break;
-                }
-            }
-        }).unwrap();
+                trace!(&cfg, "ConnectionHandler thread shutdown");
+            }).unwrap();
 
         ConnectionHandler { thread, config }
     }

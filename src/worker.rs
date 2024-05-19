@@ -95,6 +95,8 @@ impl Worker {
         receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
         config: &Config,
     ) -> Worker {
+        trace!(&config, "Worker thread {id}: startup");
+
         let thread_cfg = config.clone();
         let thread = thread::Builder::new()
             .name(format!("Worker {id}"))
@@ -106,7 +108,7 @@ impl Worker {
                     job.call_box(id);
                 }
                 Message::Shutdown => {
-                    trace!(&thread_cfg, "Worker {id}: shutdown");
+                    trace!(&thread_cfg, "Worker thread {id}: shutdown");
                     break;
                 }
             }

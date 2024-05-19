@@ -114,7 +114,7 @@ pub fn info(config: &Config, text: &str) {
 #[allow(dead_code)]
 pub fn verb(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Verb));
-    eprintln!("{formatted_message}");
+    println!("{formatted_message}");
 }
 
 #[allow(dead_code)]
@@ -137,7 +137,7 @@ macro_rules! init {
             let text = &std::fmt::format(format_args!($($arg)*));
             let formatted_message_prefix = $crate::util::format_log_message_prefix(&new_time_string(), "Init", false);
             let formatted_message = format!("{formatted_message_prefix}{text}");
-            eprintln!("{formatted_message}");
+            println!("{formatted_message}");
         }
     }};
 }
