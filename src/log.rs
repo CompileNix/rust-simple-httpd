@@ -3,6 +3,14 @@ use std::fmt;
 use crate::config::Config;
 use crate::{enum_with_helpers, util};
 
+// #[cfg(not(feature = "logging"))]
+// #[macro_use]
+// mod log {
+//     macro_rules! trace    ( ($($tt:tt)*) => {{}} );
+//     macro_rules! debug    ( ($($tt:tt)*) => {{}} );
+//     macro_rules! warn     ( ($($tt:tt)*) => {{}} );
+// }
+
 enum_with_helpers! {
     pub enum Level {
         Error,
