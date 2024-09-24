@@ -15,13 +15,13 @@ log-debug = ["log-verb"]
 log-trace = ["log-debug"]
 
 [dependencies]
-anyhow = "1"
-indoc = "2"
-signal-hook = "0"
-time = { version = "0", features = [ "formatting" ] }
+anyhow = "1.0.89"
+indoc = "2.0.5"
+signal-hook = "0.3.17"
+time = { version = "0.3.36", features = [ "formatting" ] }
 
 [dev-dependencies]
-rand = "0"
+rand = "0.8.5"
 reqwest = { version = "0.12.4", default-features = false }
 tokio = { version = "1.37.0", features = ["macros"] }
 
