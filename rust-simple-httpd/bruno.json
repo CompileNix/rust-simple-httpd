@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "rust-simple-httpd",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}
