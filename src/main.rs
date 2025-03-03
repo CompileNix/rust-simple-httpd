@@ -54,6 +54,7 @@ fn main() {
                     signal_text = "SIGQUIT".into();
                 }
 
+                println!(); // add linebreak before log message because of ^C from stdin
                 info!(cfg, "ProcessSignalHandler: Received process signal {signal_text}");
 
                 sender_signal.send(tcp::ConnectionHandlerMessage::Shutdown).unwrap_or_default();

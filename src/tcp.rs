@@ -36,19 +36,22 @@ impl ConnectionHandler {
             .name("ConnectionHandler".into())
             .spawn(move || {
                 loop {
-                    let cfg = connection_handler_config.clone();
+                    let loop_cfg = connection_handler_config.clone();
                     let message = receiver.lock().unwrap().recv().unwrap();
 
                     match message {
                         ConnectionHandlerMessage::NewConnection(mut stream) => {
-                            verb!(&cfg, "ConnectionHandler: received a new connection from HTTP Server");
+                            let thread_pool_cfg = loop_cfg.clone();
+                            let peer_addr = stream.peer_addr().unwrap();
+                            trace!(&loop_cfg.clone(), "ConnectionHandler: received a connection from {}", peer_addr);
                             thread_pool.execute(move |worker_id| {
-                                trace!(&cfg, "[{worker_id}]: received a new job from the thread pool of the connection handler");
-                                Server::handle_connection(&mut stream, worker_id, &cfg);
+                                trace!(&thread_pool_cfg, "[{worker_id}]: received a job from the thread pool of the connection handler for {}", peer_addr);
+                                Server::handle_connection(&mut stream, worker_id, &thread_pool_cfg);
                             }).unwrap();
+                            trace!(&loop_cfg, "ConnectionHandler: delegated connection for {} to thread_pool", peer_addr);
                         }
                         ConnectionHandlerMessage::Shutdown => {
-                            verb!(&cfg, "ConnectionHandler: received shutdown signal");
+                            verb!(&loop_cfg, "ConnectionHandler: received shutdown signal");
                             break;
                         }
                     }

@@ -230,6 +230,8 @@ impl Server {
     pub fn handle_connection(stream: &mut TcpStream, worker_id: usize, config: &Config) {
         let cfg = config;
 
+        trace!(cfg, "[{worker_id}]: handle request from client {}", stream.peer_addr().unwrap());
+
         let mut request_headers = vec![0; config.buffer_client_receive_size];
         let request_body: Vec<u8>;
         let bytes_body_read: usize = 0;
@@ -282,9 +284,10 @@ impl Server {
 
             // check if the client is done with sending request headers
             if let Some(eoh_byte_index) = Self::bytes_contain_eoh(request_data.as_slice()) {
-                debug!(cfg, "[{worker_id}]: EOH sequence found at {eoh_byte_index}");
+                trace!(cfg, "[{worker_id}]: EOH sequence found at {eoh_byte_index}");
                 request_headers = request_data.get(..eoh_byte_index).unwrap().to_vec();
                 request_body_byte_index_start = eoh_byte_index + 4; // +4 to skip over the \r\n\r\n at the end
+                trace!(cfg, "[{worker_id}]: request_body_byte_index_start: {request_body_byte_index_start}");
                 break;
             }
 
@@ -326,6 +329,7 @@ impl Server {
         // file.write_all(request_body.as_bytes()).unwrap();
 
         if bytes_body_read >= 50_000_000 {
+            warn!(cfg, "[{worker_id}]: Payload too large {bytes_body_read} bytes > 50_000_000 bytes");
             Self::send_basic_status_response(stream, 413, "Payload To Large");
             return;
         }
@@ -385,7 +389,9 @@ impl Server {
             body.as_str(),
         );
 
-        let _ = stream.write(response.as_bytes()).unwrap();
+        verb!(cfg, "[{worker_id}]: Send HTTP {status_code} {status_message} to client {}", stream.peer_addr().unwrap());
+        let _ = stream.write(response.as_bytes());
+        stream.flush().ok();
     }
 
 }
