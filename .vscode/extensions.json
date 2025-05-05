@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "cordx56.rustowl-vscode",
+        "vadimcn.vscode-lldb",
+        "fill-labs.dependi",
+        "tamasfe.even-better-toml",
+        "rust-lang.rust-analyzer",
+        "aaron-bond.better-comments"
+    ]
+}

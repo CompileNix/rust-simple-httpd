@@ -22,5 +22,5 @@
         "-Wclippy::too_many_lines",
         "-Aclippy::unwrap_used",
         "-Aclippy::expect_fun_call"
-      ]
+    ]
 }
