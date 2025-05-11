@@ -3,14 +3,6 @@ use std::fmt;
 use crate::config::Config;
 use crate::{enum_with_helpers, util};
 
-// #[cfg(not(feature = "logging"))]
-// #[macro_use]
-// mod log {
-//     macro_rules! trace    ( ($($tt:tt)*) => {{}} );
-//     macro_rules! debug    ( ($($tt:tt)*) => {{}} );
-//     macro_rules! warn     ( ($($tt:tt)*) => {{}} );
-// }
-
 enum_with_helpers! {
     pub enum Level {
         Error,
@@ -101,123 +93,156 @@ impl fmt::Display for Log<'_> {
     }
 }
 
-#[allow(dead_code)]
+
+// ############################################ ERROR
+
+#[cfg(feature = "log-error")]
 pub fn error(config: &Config, text: &str) {
     let formatted_message = format!("{}", Log::new(config, text, Level::Error));
     eprintln!("{formatted_message}");
 }
 
-#[allow(dead_code)]
-pub fn warn(config: &Config, text: &str) {
-    let formatted_message = format!("{}", Log::new(config, text, Level::Warn));
-    eprintln!("{formatted_message}");
-}
-
-#[allow(dead_code)]
-pub fn info(config: &Config, text: &str) {
-    let formatted_message = format!("{}", Log::new(config, text, Level::Info));
-    println!("{formatted_message}");
-}
-
-#[allow(dead_code)]
-pub fn verb(config: &Config, text: &str) {
-    let formatted_message = format!("{}", Log::new(config, text, Level::Verb));
-    println!("{formatted_message}");
-}
-
-#[allow(dead_code)]
-pub fn debug(config: &Config, text: &str) {
-    let formatted_message = format!("{}", Log::new(config, text, Level::Debug));
-    eprintln!("{formatted_message}");
-}
-
-#[allow(dead_code)]
-pub fn trace(config: &Config, text: &str) {
-    let formatted_message = format!("{}", Log::new(config, text, Level::Trace));
-    eprintln!("{formatted_message}");
-}
-
-#[macro_export]
-macro_rules! init {
-    ($($arg:tt)*) => {{
-        #[cfg(feature = "log-trace")]
-        {
-            let text = &std::fmt::format(format_args!($($arg)*));
-            let formatted_message_prefix = $crate::util::format_log_message_prefix(&new_time_string(), "Init", false);
-            let formatted_message = format!("{formatted_message_prefix}{text}");
-            println!("{formatted_message}");
-        }
-    }};
+#[cfg(not(feature = "log-error"))]
+pub fn error(config: &Config, text: &str) {
+    let _ = Log::new(config, text, Level::Error);
 }
 
 #[macro_export]
 macro_rules! error {
     ($config:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "log-err")]
-        {
-            if $config.log_level >= Level::Error {
-                error($config, &std::fmt::format(format_args!($($arg)*)));
-            }
+        if $config.log_level >= Level::Error {
+            error($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
+}
+
+// ############################################ WARNING
+
+#[cfg(feature = "log-warn")]
+pub fn warn(config: &Config, text: &str) {
+    let formatted_message = format!("{}", Log::new(config, text, Level::Warn));
+    eprintln!("{formatted_message}");
+}
+
+#[cfg(not(feature = "log-warn"))]
+pub fn warn(config: &Config, text: &str) {
+    let _ = Log::new(config, text, Level::Warn);
 }
 
 #[macro_export]
 macro_rules! warn {
     ($config:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "log-warn")]
-        {
-            if $config.log_level >= Level::Warn {
-                warn($config, &std::fmt::format(format_args!($($arg)*)));
-            }
+        if $config.log_level >= Level::Warn {
+            warn($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
+}
+
+// ############################################ INFO
+
+#[cfg(feature = "log-info")]
+pub fn info(config: &Config, text: &str) {
+    let formatted_message = format!("{}", Log::new(config, text, Level::Info));
+    println!("{formatted_message}");
+}
+
+#[cfg(not(feature = "log-info"))]
+pub fn info(config: &Config, text: &str) {
+    let _ = Log::new(config, text, Level::Info);
 }
 
 #[macro_export]
 macro_rules! info {
     ($config:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "log-info")]
-        {
-            if $config.log_level >= Level::Info {
-                info($config, &std::fmt::format(format_args!($($arg)*)));
-            }
+        if $config.log_level >= Level::Info {
+            info($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
+}
+
+// ############################################ VERBOSE
+
+#[cfg(feature = "log-verb")]
+pub fn verb(config: &Config, text: &str) {
+    let formatted_message = format!("{}", Log::new(config, text, Level::Verb));
+    println!("{formatted_message}");
+}
+
+#[cfg(not(feature = "log-verb"))]
+pub fn verb(config: &Config, text: &str) {
+    let _ = Log::new(config, text, Level::Verb);
 }
 
 #[macro_export]
 macro_rules! verb {
     ($config:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "log-verb")]
-        {
-            if $config.log_level >= Level::Verb {
-                verb($config, &std::fmt::format(format_args!($($arg)*)));
-            }
+        if $config.log_level >= Level::Verb {
+            verb($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
+}
+
+// ############################################ DEBUG
+
+#[cfg(feature = "log-debug")]
+pub fn debug(config: &Config, text: &str) {
+    let formatted_message = format!("{}", Log::new(config, text, Level::Debug));
+    eprintln!("{formatted_message}");
+}
+
+#[cfg(not(feature = "log-debug"))]
+pub fn debug(config: &Config, text: &str) {
+    let _ = Log::new(config, text, Level::Debug);
 }
 
 #[macro_export]
 macro_rules! debug {
     ($config:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "log-debug")]
-        {
-            if $config.log_level >= Level::Debug {
-                debug($config, &std::fmt::format(format_args!($($arg)*)));
-            }
+        if $config.log_level >= Level::Debug {
+            debug($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
+}
+
+// ############################################ TRACE
+
+#[cfg(feature = "log-trace")]
+pub fn trace(config: &Config, text: &str) {
+    let formatted_message = format!("{}", Log::new(config, text, Level::Trace));
+    eprintln!("{formatted_message}");
+}
+
+#[cfg(not(feature = "log-trace"))]
+pub fn trace(config: &Config, text: &str) {
+    let _ = Log::new(config, text, Level::Trace);
 }
 
 #[macro_export]
 macro_rules! trace {
     ($config:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "log-trace")]
-        {
-            if $config.log_level >= Level::Trace {
-                trace($config, &std::fmt::format(format_args!($($arg)*)));
-            }
+        if $config.log_level >= Level::Trace {
+            trace($config, &std::fmt::format(format_args!($($arg)*)));
         }
+    }};
+}
+
+// ############################################ INIT
+
+#[cfg(feature = "log-trace")]
+#[macro_export]
+macro_rules! init {
+    ($($arg:tt)*) => {{
+        let text = &std::fmt::format(format_args!($($arg)*));
+        let formatted_message_prefix = $crate::util::format_log_message_prefix(&$crate::util::new_time_string(), "Init", false);
+        let formatted_message = format!("{formatted_message_prefix}{text}");
+        println!("{formatted_message}");
+    }};
+}
+
+#[cfg(not(feature = "log-trace"))]
+#[macro_export]
+macro_rules! init {
+    ($($arg:tt)*) => {{
+        let _ = format_args!($($arg)*);
     }};
 }

@@ -1,27 +1,26 @@
 [package]
 name = "rust-simple-httpd"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
-default = ["color", "log-trace"]
+default = ["color", "humantime", "log-trace"]
 color = []
 humantime = ["time/local-offset"]
-log-err = []
-log-warn = ["log-err"]
+log-error = []
+log-warn = ["log-error"]
 log-info = ["log-warn"]
 log-verb = ["log-info"]
 log-debug = ["log-verb"]
 log-trace = ["log-debug"]
 
 [dependencies]
-anyhow = "1.0.89"
-indoc = "2.0.5"
-signal-hook = "0.3.17"
-time = { version = "0.3.36", features = [ "formatting" ] }
+indoc = "2.0.6"
+signal-hook = "0.3.18"
+time = { version = "0.3.41", features = [ "formatting" ] }
 
 [dev-dependencies]
-rand = "0.8.5"
-reqwest = { version = "0.12.4", default-features = false }
-tokio = { version = "1.37.0", features = ["macros"] }
+rand = "0.9.1"
+reqwest = { version = "0.12.15", default-features = false }
+tokio = { version = "1.45.0", features = ["macros"] }
 

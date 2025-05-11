@@ -2,8 +2,8 @@ use std::fmt;
 use std::io::IsTerminal;
 use std::num::NonZero;
 
-#[cfg(feature = "humantime")]
-use time::util::local_offset::Soundness;
+#[cfg(feature = "log-trace")]
+use std::fmt::Write;
 
 use crate::config::Config;
 
@@ -27,7 +27,21 @@ macro_rules! enum_with_helpers {
         }
 
         use std::str::FromStr;
+        use std::error::Error;
+
+        #[derive(Debug, Clone, PartialEq)]
         pub struct ParseEnumError;
+
+        impl Error for ParseEnumError {}
+
+        use std::fmt::Display;
+        use std::fmt::Formatter;
+        impl Display for ParseEnumError {
+            fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+                write!(f, "Invalid log level")
+            }
+        }
+
         impl FromStr for $name {
             type Err = ParseEnumError;
 
@@ -251,6 +265,7 @@ pub fn format_with_options(value: &impl fmt::Display, f: &mut fmt::Formatter) ->
 /// # Safety
 ///
 /// This function involves no unsafe operations and is safe to call.
+#[cfg(feature = "log-trace")]
 pub fn num_digits(n: usize) -> usize {
     // slow but reliable
     n.to_string().chars().count()
@@ -267,20 +282,15 @@ pub fn format_log_message_prefix(time: &str, level: &str, contains_ansi_color: b
 /// Safety notice: <https://docs.rs/time/0.3.34/time/util/local_offset/fn.set_soundness.html#safety>
 #[cfg(feature = "humantime")]
 pub fn new_time_string() -> String {
-    unsafe {
-        time::util::local_offset::set_soundness(Soundness::Unsound);
-    }
     let now = time::OffsetDateTime::now_local().unwrap_or(time::OffsetDateTime::now_utc());
-    let time = now
+    now
         .format(
             &time::format_description::parse_borrowed::<2>(
                 "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second]",
             )
             .expect("Could not format current datetime to string for log message"),
         )
-        .unwrap_or_default();
-
-    time
+        .unwrap_or_default()
 }
 
 #[cfg(not(feature = "humantime"))]
@@ -310,14 +320,11 @@ pub fn log_level_to_string_colorized(level: crate::log::Level) -> crate::color::
 }
 
 #[cfg(feature = "log-trace")]
-pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> String {
-    let mut output = String::with_capacity(250); // this size is rather small but also very rarely too small
-    let digits = num_digits(index_offset + vec.len());
-
+pub fn calculate_format_log_message_prefix_length(config: &Config, level: crate::log::Level) -> usize {
     let format_log_message_prefix_length: usize;
     #[cfg(feature = "color")]
     {
-        let colorized_text = log_level_to_string_colorized(crate::log::Level::Trace);
+        let colorized_text = log_level_to_string_colorized(level);
         let format_log_message_prefix = format_log_message_prefix(
             &new_time_string(),
             &colorized_text.text,
@@ -328,10 +335,20 @@ pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> 
     }
     #[cfg(not(feature = "color"))]
     {
+        let _ = config;
+        let _ = level;
         let text = crate::log::Level::Trace.to_string();
         let format_log_message_prefix = format_log_message_prefix(&new_time_string(), &text, false);
         format_log_message_prefix_length = format_log_message_prefix.len();
     }
+    format_log_message_prefix_length
+}
+
+#[cfg(feature = "log-trace")]
+pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> String {
+    let mut output = String::with_capacity(250); // this size is rather small but also very rarely too small
+    let digits = num_digits(index_offset + vec.len());
+    let format_log_message_prefix_length = calculate_format_log_message_prefix_length(config, crate::log::Level::Trace);
 
     for (index, byte) in vec.iter().enumerate() {
         if index != 0 {
@@ -342,13 +359,18 @@ pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> 
             output.push('\n');
             output += &*" ".repeat(format_log_message_prefix_length);
             let current_index = index + index_offset;
-            output.push_str(&format!("{current_index:digits$} = "));
+            write!(output, "{current_index:digits$} = ").unwrap();
         }
 
         output.push_str(&write_formatted_eol_byte(*byte, config));
     }
 
     output
+}
+
+#[cfg(not(feature = "log-trace"))]
+pub fn highlighted_hex_vec(_vec: &[u8], _index_offset: usize, _config: &Config) -> String {
+    String::new()
 }
 
 pub fn available_parallelism_capped_at(max: usize) -> usize {

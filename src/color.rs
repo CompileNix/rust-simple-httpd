@@ -3,7 +3,7 @@ use std::fmt;
 
 pub struct ColorizedText {
     pub text: String,
-    pub color_code_length: usize,
+    #[cfg(feature = "log-trace")] pub color_code_length: usize,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -41,11 +41,11 @@ impl Color {
         let color = self.write_foreground_code();
         let reset_color = Color::Reset.write_foreground_code();
         let text = format!("{color}{text}{reset_color}");
-        let color_code_length = color.len() + reset_color.len();
+        #[cfg(feature = "log-trace")] let color_code_length = color.len() + reset_color.len();
 
         ColorizedText {
             text,
-            color_code_length,
+            #[cfg(feature = "log-trace")] color_code_length,
         }
     }
 }

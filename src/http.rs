@@ -1,15 +1,14 @@
 use crate::config::Config;
-#[cfg(feature = "log-trace")]
 use crate::util::highlighted_hex_vec;
 use crate::Level;
 use crate::{debug, trace, verb, warn};
-use anyhow::{anyhow, Result};
 use indoc::formatdoc;
 use std::any::Any;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::thread;
 use std::sync::{Arc, mpsc, Mutex};
+use std::collections::HashMap;
 use crate::tcp::{ConnectionHandler, ConnectionHandlerMessage};
 
 #[derive(Debug)]
@@ -92,13 +91,10 @@ impl Server {
             return None;
         }
 
-        // Search for the EOH sequence in the content
-        let position = content
-            .windows(eoh_sequence.len())
-            .position(|window| window == eoh_sequence);
-
         // Return the position found, or None if not found
-        position
+        content
+            .windows(eoh_sequence.len())
+            .position(|window| window == eoh_sequence)
     }
 
     #[must_use]
@@ -144,17 +140,17 @@ impl Server {
         stream: &mut TcpStream,
         worker_id: usize,
         config: &Config,
-    ) -> anyhow::Result<usize> {
+    ) -> Result<usize, std::io::Error> {
         let cfg = config;
 
         // Set stream read and write timeouts
         if let Err(err) = stream.set_read_timeout(Some(cfg.buffer_read_client_timeout)) {
             warn!(cfg, "[{worker_id}]: set_read_timeout call failed: {err}");
-            return Err(anyhow!(err));
+            return Err(err);
         }
         if let Err(err) = stream.set_write_timeout(Some(cfg.buffer_write_client_timeout)) {
             warn!(cfg, "[{worker_id}]: set_write_timeout call failed: {err}");
-            return Err(anyhow!(err));
+            return Err(err);
         }
 
         // let result_timeout = tokio::time::timeout(self.config.buffer_read_client_timeout, stream.read(buffer)).await;
@@ -188,7 +184,7 @@ impl Server {
             }
             Err(err) => {
                 warn!(cfg, "[{worker_id}]: 🤷 Error while reading from remote, aborting connection. Here is the error we got: {err}");
-                return Err(anyhow!(err));
+                return Err(err);
             }
         };
 
@@ -224,7 +220,6 @@ impl Server {
     #[allow(
         unused_variables,
         unused_assignments,
-        clippy::unwrap_used,
         clippy::too_many_lines
     )]
     pub fn handle_connection(stream: &mut TcpStream, worker_id: usize, config: &Config) {
@@ -233,10 +228,9 @@ impl Server {
         trace!(cfg, "[{worker_id}]: handle request from client {}", stream.peer_addr().unwrap());
 
         let mut request_headers = vec![0; config.buffer_client_receive_size];
-        let request_body: Vec<u8>;
         let bytes_body_read: usize = 0;
         let mut request_data = vec![];
-        let request_body_byte_index_start;
+        let mut request_body_byte_index_start = 0;
         let mut buffer = vec![0; config.buffer_client_receive_size];
         let mut request_header_limit_bytes_exceeded = false;
         let mut request_header_incomplete = false;
@@ -313,18 +307,103 @@ impl Server {
             return;
         }
 
-        //print!("{:02X?}\n", request_data);
-        //io::stdout().flush().unwrap();
-
-        // TODO: read request body and determined if the body should also be fetched.
-
         let request_headers = String::from_utf8_lossy(&request_headers);
-        let request_body = String::new();
+        debug!(cfg, "[{worker_id}]: final request headers raw:\n{request_headers}");
+        // let request_body = String::new();
 
-        verb!(cfg, "[{worker_id}]: Request headers:\n{request_headers}");
+        // parse http request headers, without a mem copy into a simple data structure which enables convenient access of individual header keys and values
+        let mut request_headers_map = HashMap::new();
+        /// Parse HTTP request headers into a map for easy access.
+        ///
+        /// This function takes a slice of bytes representing the raw HTTP request headers,
+        /// converts it to a `String`, splits it by newline characters, and then parses each line
+        /// as a key-value pair. The result is stored in a `HashMap` where keys are header names
+        /// and values are header values.
+        ///
+        /// # Arguments
+        ///
+        /// * `request_headers_bytes` - A slice of bytes (`&[u8]`) containing the raw HTTP request headers.
+        ///
+        /// # Returns
+        ///
+        /// Returns a `HashMap<String, String>` where each key is a header name and each value is
+        /// the corresponding header value. If a header appears multiple times in the input,
+        /// only the last occurrence will be kept in the map.
+        fn parse_request_headers(request_headers_bytes: &[u8], headers_map: &mut HashMap<String, String>) {
+            let request_headers_str = String::from_utf8_lossy(request_headers_bytes);
+            for line in request_headers_str.lines() {
+                if let Some(key_value) = line.split_once(':') {
+                    let header_key = key_value.0.trim().to_lowercase();
+                    let header_value = key_value.1.trim().to_lowercase();
+                    headers_map.insert(header_key, header_value);
+                }
+            }
+        }
+
+        parse_request_headers(request_headers.as_bytes(), &mut request_headers_map);
+
+        for (header_key, header_value) in &request_headers_map {
+            trace!(cfg, "[{worker_id}] final request headers parsed: {header_key}: {header_value}");
+        }
+
+        // Check for chunked transfer encoding
+        if request_headers_map.get("transfer-encoding").is_some_and(|v| v.contains("chunked")) {
+            warn!(cfg, "[{worker_id}]: Chunked transfer encoding is not supported yet");
+            Self::send_basic_status_response(stream, 501, "Not Implemented");
+            return;
+        }
+
+        // Read a request body if present
+        let content_length = request_headers_map
+            .get("content-length")
+            .and_then(|len| len.parse::<usize>().ok());
+
+        let request_body: Vec<u8> = if let Some(length) = content_length {
+            debug!(cfg, "[{worker_id}]: Content-Length header found, reading {length} bytes of body data");
+
+            // First, get any body data that was already read into request_data
+            let mut body = if request_data.len() > request_body_byte_index_start {
+                debug!(cfg, "[{worker_id}]: receive beginning of body data ({} bytes) from previous reads of request headers into body", request_data.len() - request_body_byte_index_start);
+                trace!(cfg, "[{worker_id}]: data raw: {}", highlighted_hex_vec(&request_data[request_body_byte_index_start..], 0, cfg));
+                trace!(cfg, "[{worker_id}]: data string: {}", String::from_utf8_lossy(&request_data[request_body_byte_index_start..]));
+                request_data[request_body_byte_index_start..].to_vec()
+            } else {
+                Vec::new()
+            };
+
+            // Continue reading until we have all the body data
+            while body.len() < length {
+                let remaining = length - body.len();
+                let to_read = remaining.min(config.buffer_client_receive_size);
+
+                let Ok(bytes_read) = Self::read_stream_into(&mut buffer[..to_read], stream, worker_id, cfg) else {
+                    warn!(cfg, "[{worker_id}]: Failed to read request body data");
+                    return;
+                };
+
+                if bytes_read == 0 {
+                    warn!(cfg, "[{worker_id}]: Connection closed before receiving complete body");
+                    return;
+                }
+
+                trace!(cfg, "[{worker_id}]: body data chunk raw: {}", highlighted_hex_vec(&buffer[..bytes_read], body.len(), cfg));
+                trace!(cfg, "[{worker_id}]: body data chunk string: {}", String::from_utf8_lossy(&buffer[..bytes_read]));
+
+                body.extend_from_slice(&buffer[..bytes_read]);
+            }
+
+            debug!(cfg, "[{worker_id}]: Finished reading request body, total bytes read: {}", body.len());
+            debug!(cfg, "[{worker_id}]: final body data raw: {}", highlighted_hex_vec(&body, 0, cfg));
+            debug!(cfg, "[{worker_id}]: final body data string: {}", String::from_utf8_lossy(&body));
+            body
+        } else {
+            debug!(cfg, "[{worker_id}]: No Content-Length header found, assuming no body");
+            Vec::new()
+        };
+
         // let mut file = File::create("request_headers.txt").unwrap();
         // file.write_all(request_headers.as_bytes()).unwrap();
-        verb!(cfg, "[{worker_id}]: Request body:\n{request_body}");
+        //verb!(cfg, "[{worker_id}]: Request body:\n{request_body}");
         // let mut file = File::create("request_body.txt").unwrap();
         // file.write_all(request_body.as_bytes()).unwrap();
 
@@ -393,5 +472,4 @@ impl Server {
         let _ = stream.write(response.as_bytes());
         stream.flush().ok();
     }
-
 }

@@ -58,7 +58,7 @@ impl ThreadPool {
     /// A return value of `Err` means that the data will never be received, but a return value of
     /// `Ok` does not mean that the data will be received. It is possible for the corresponding
     /// receiver to hang up immediately after this function returns `Ok`.
-    pub fn execute<F>(&self, f: F) -> anyhow::Result<(), SendError<Message>>
+    pub fn execute<F>(&self, f: F) -> Result<(), SendError<Message>>
         where F: FnOnce(usize) + Send + 'static, {
 
         self.sender.send(Message::NewJob(Box::new(f)))
