@@ -1,7 +1,9 @@
 use std::fmt;
 
-use crate::config::Config;
 use crate::{enum_with_helpers, util};
+
+#[cfg(feature = "log-error")]
+use crate::config::Config;
 
 enum_with_helpers! {
     pub enum Level {
@@ -38,13 +40,14 @@ impl TryFrom<&str> for Level {
     }
 }
 
-impl fmt::Display for Level {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Display for Level {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let value = format!("{self:?}");
         util::format_with_options(&value, f)
     }
 }
 
+#[cfg(feature = "log-error")]
 pub struct Log<'a> {
     config: &'a Config,
     message: String,
@@ -52,6 +55,7 @@ pub struct Log<'a> {
     time: String,
 }
 
+#[cfg(feature = "log-error")]
 impl Log<'_> {
     #[must_use]
     pub fn new<'a>(config: &'a Config, text: &'a str, level: Level) -> Log<'a> {
@@ -64,8 +68,9 @@ impl Log<'_> {
     }
 }
 
-impl fmt::Display for Log<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+#[cfg(feature = "log-error")]
+impl Display for Log<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let level_text: String;
         let colored: bool;
         #[cfg(feature = "color")]
@@ -102,15 +107,11 @@ pub fn error(config: &Config, text: &str) {
     eprintln!("{formatted_message}");
 }
 
-#[cfg(not(feature = "log-error"))]
-pub fn error(config: &Config, text: &str) {
-    let _ = Log::new(config, text, Level::Error);
-}
-
 #[macro_export]
 macro_rules! error {
     ($config:expr, $($arg:tt)*) => {{
         if $config.log_level >= Level::Error {
+            #[cfg(feature = "log-error")]
             error($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
@@ -124,15 +125,11 @@ pub fn warn(config: &Config, text: &str) {
     eprintln!("{formatted_message}");
 }
 
-#[cfg(not(feature = "log-warn"))]
-pub fn warn(config: &Config, text: &str) {
-    let _ = Log::new(config, text, Level::Warn);
-}
-
 #[macro_export]
 macro_rules! warn {
     ($config:expr, $($arg:tt)*) => {{
         if $config.log_level >= Level::Warn {
+            #[cfg(feature = "log-warn")]
             warn($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
@@ -146,15 +143,11 @@ pub fn info(config: &Config, text: &str) {
     println!("{formatted_message}");
 }
 
-#[cfg(not(feature = "log-info"))]
-pub fn info(config: &Config, text: &str) {
-    let _ = Log::new(config, text, Level::Info);
-}
-
 #[macro_export]
 macro_rules! info {
     ($config:expr, $($arg:tt)*) => {{
         if $config.log_level >= Level::Info {
+            #[cfg(feature = "log-info")]
             info($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
@@ -168,15 +161,11 @@ pub fn verb(config: &Config, text: &str) {
     println!("{formatted_message}");
 }
 
-#[cfg(not(feature = "log-verb"))]
-pub fn verb(config: &Config, text: &str) {
-    let _ = Log::new(config, text, Level::Verb);
-}
-
 #[macro_export]
 macro_rules! verb {
     ($config:expr, $($arg:tt)*) => {{
         if $config.log_level >= Level::Verb {
+            #[cfg(feature = "log-verb")]
             verb($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
@@ -190,15 +179,11 @@ pub fn debug(config: &Config, text: &str) {
     eprintln!("{formatted_message}");
 }
 
-#[cfg(not(feature = "log-debug"))]
-pub fn debug(config: &Config, text: &str) {
-    let _ = Log::new(config, text, Level::Debug);
-}
-
 #[macro_export]
 macro_rules! debug {
     ($config:expr, $($arg:tt)*) => {{
         if $config.log_level >= Level::Debug {
+            #[cfg(feature = "log-debug")]
             debug($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};
@@ -212,15 +197,14 @@ pub fn trace(config: &Config, text: &str) {
     eprintln!("{formatted_message}");
 }
 
-#[cfg(not(feature = "log-trace"))]
-pub fn trace(config: &Config, text: &str) {
-    let _ = Log::new(config, text, Level::Trace);
-}
+// #[cfg(not(feature = "log-trace"))]
+// pub fn trace(config: &Config, text: &str) { }
 
 #[macro_export]
 macro_rules! trace {
     ($config:expr, $($arg:tt)*) => {{
         if $config.log_level >= Level::Trace {
+            #[cfg(feature = "log-trace")]
             trace($config, &std::fmt::format(format_args!($($arg)*)));
         }
     }};

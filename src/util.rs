@@ -67,7 +67,6 @@ macro_rules! enum_with_helpers {
             }
 
             /// Function to iterate over all enum variants
-            #[allow(unused)]
             pub fn iter() -> impl Iterator<Item = Self> {
                 static VARIANTS: &[$name] = &[$($name::$variant),+];
                 VARIANTS.iter().copied()
@@ -271,6 +270,7 @@ pub fn num_digits(n: usize) -> usize {
     n.to_string().chars().count()
 }
 
+#[cfg(feature = "log-error")]
 pub fn format_log_message_prefix(time: &str, level: &str, contains_ansi_color: bool) -> String {
     if contains_ansi_color {
         format!("[{time} {level:<14}]: ")
@@ -294,13 +294,12 @@ pub fn new_time_string() -> String {
 }
 
 #[cfg(not(feature = "humantime"))]
-#[allow(clippy::let_and_return)]
+#[cfg(feature = "log-error")]
 pub fn new_time_string() -> String {
     let now = time::OffsetDateTime::now_utc();
     let time = now
         .format(&time::format_description::well_known::Iso8601::DEFAULT)
         .unwrap_or_default();
-
     time
 }
 
@@ -319,6 +318,7 @@ pub fn log_level_to_string_colorized(level: crate::log::Level) -> crate::color::
     }
 }
 
+// TODO: https://github.com/uutils/ansi-width
 #[cfg(feature = "log-trace")]
 pub fn calculate_format_log_message_prefix_length(config: &Config, level: crate::log::Level) -> usize {
     let format_log_message_prefix_length: usize;
@@ -366,11 +366,6 @@ pub fn highlighted_hex_vec(vec: &[u8], index_offset: usize, config: &Config) -> 
     }
 
     output
-}
-
-#[cfg(not(feature = "log-trace"))]
-pub fn highlighted_hex_vec(_vec: &[u8], _index_offset: usize, _config: &Config) -> String {
-    String::new()
 }
 
 pub fn available_parallelism_capped_at(max: usize) -> usize {

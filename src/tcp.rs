@@ -42,6 +42,7 @@ impl ConnectionHandler {
                     match message {
                         ConnectionHandlerMessage::NewConnection(mut stream) => {
                             let thread_pool_cfg = loop_cfg.clone();
+                            #[cfg(feature = "log-trace")]
                             let peer_addr = stream.peer_addr().unwrap();
                             trace!(&loop_cfg.clone(), "ConnectionHandler: received a connection from {}", peer_addr);
                             thread_pool.execute(move |worker_id| {
@@ -64,7 +65,8 @@ impl ConnectionHandler {
 
     pub fn bind(&self) -> TcpListener {
         let cfg = &self.config;
-        let listener = TcpListener::bind(self.config.bind_addr.clone()).expect(&format!("Can't bind to {}", cfg.bind_addr));
+        let listener = TcpListener::bind(self.config.bind_addr.clone())
+            .unwrap_or_else(|_| panic!("Can't bind to {}", cfg.bind_addr));
         info!(cfg, "listening on {}", cfg.bind_addr);
         listener
     }

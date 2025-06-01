@@ -4,23 +4,25 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["color", "humantime", "log-trace"]
+default = ["color", "humantime", "log-info"]
 color = []
 humantime = ["time/local-offset"]
-log-error = []
+log-error = ["log"]
 log-warn = ["log-error"]
 log-info = ["log-warn"]
 log-verb = ["log-info"]
 log-debug = ["log-verb"]
 log-trace = ["log-debug"]
+profiling = ["pprof"]
 
 [dependencies]
 indoc = "2.0.6"
 signal-hook = "0.3.18"
 time = { version = "0.3.41", features = [ "formatting" ] }
+log = { version = "0.4.27", optional = true }
+pprof = { version = "0.15.0", optional = true, features = ["flamegraph"] }
 
 [dev-dependencies]
 rand = "0.9.1"
-reqwest = { version = "0.12.15", default-features = false }
-tokio = { version = "1.45.0", features = ["macros"] }
-
+reqwest = { version = "0.12.18", default-features = false }
+tokio = { version = "1.45.1", features = ["macros"] }

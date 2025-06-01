@@ -9,7 +9,6 @@ use std::sync::Mutex;
 use rand::Rng;
 use reqwest::StatusCode;
 
-use crate::http;
 use crate::http::Server;
 use crate::log;
 use crate::tcp;
@@ -236,7 +235,7 @@ async fn http_server_simple_valid_request() {
 
     let (sender, receiver) = mpsc::channel::<tcp::ConnectionHandlerMessage>();
     let receiver = Arc::new(Mutex::new(receiver));
-    let server = http::Server::new(cfg, receiver, sender.clone());
+    let server = Server::new(cfg, receiver, sender.clone());
 
     // Do the testing
     let url = format!("http://{}/", cfg.bind_addr);

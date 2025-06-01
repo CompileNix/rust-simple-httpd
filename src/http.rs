@@ -1,15 +1,17 @@
 use crate::config::Config;
-use crate::util::highlighted_hex_vec;
 use crate::Level;
-use crate::{debug, trace, verb, warn};
+use crate::{debug, trace, verb, warn, error};
 use indoc::formatdoc;
 use std::any::Any;
-use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::thread;
 use std::sync::{Arc, mpsc, Mutex};
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use crate::tcp::{ConnectionHandler, ConnectionHandlerMessage};
+
+#[cfg(feature = "log-trace")]
+use crate::util::highlighted_hex_vec;
 
 #[derive(Debug)]
 pub struct Server {
@@ -33,15 +35,17 @@ impl Server {
 
         trace!(cfg, "Start TcpListener thread");
         let listener_config = config.clone();
-        let listener_handler = listener.try_clone().unwrap();
         let _ = thread::Builder::new()
             .name("TcpListener".into())
             .spawn(move || {
             let cfg = &listener_config;
-            for stream in listener_handler.incoming() {
+            for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
-                        sender.send(ConnectionHandlerMessage::NewConnection(stream)).unwrap();
+                        if let Err(err) = sender.send(ConnectionHandlerMessage::NewConnection(stream)) {
+                            error!(cfg, "Failed to send new connection to connection handler thread, shutting down listener: {err}");
+                            break;
+                        }
                     },
                     Err(err) => {
                         warn!(cfg, "incoming connection error: {err}");
@@ -216,16 +220,38 @@ impl Server {
         stream.flush().ok();
     }
 
+    /// Parse HTTP request headers into a map for easy access.
+    ///
+    /// This function takes a slice of bytes representing the raw HTTP request headers,
+    /// converts it to a `String`, splits it by newline characters, and then parses each line
+    /// as a key-value pair. The result is stored in a `HashMap` where keys are header names
+    /// and values are header values.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_headers_bytes` - A slice of bytes (`&[u8]`) containing the raw HTTP request headers.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `HashMap<String, String>` where each key is a header name and each value is
+    /// the corresponding header value. If a header appears multiple times in the input,
+    /// only the last occurrence will be kept in the map.
+    pub fn parse_request_headers(request_headers_bytes: &[u8], headers_map: &mut HashMap<String, String>) {
+        let request_headers_str = String::from_utf8_lossy(request_headers_bytes);
+        for line in request_headers_str.lines() {
+            if let Some(key_value) = line.split_once(':') {
+                let header_key = key_value.0.trim().to_lowercase();
+                let header_value = key_value.1.trim().to_lowercase();
+                headers_map.insert(header_key, header_value);
+            }
+        }
+    }
+
     // TODO: continue work
-    #[allow(
-        unused_variables,
-        unused_assignments,
-        clippy::too_many_lines
-    )]
     pub fn handle_connection(stream: &mut TcpStream, worker_id: usize, config: &Config) {
         let cfg = config;
 
-        trace!(cfg, "[{worker_id}]: handle request from client {}", stream.peer_addr().unwrap());
+        trace!(cfg, "[{worker_id}]: handle request from client {}", stream.peer_addr().expect("Failed to get peer address"));
 
         let mut request_headers = vec![0; config.buffer_client_receive_size];
         let bytes_body_read: usize = 0;
@@ -279,7 +305,12 @@ impl Server {
             // check if the client is done with sending request headers
             if let Some(eoh_byte_index) = Self::bytes_contain_eoh(request_data.as_slice()) {
                 trace!(cfg, "[{worker_id}]: EOH sequence found at {eoh_byte_index}");
-                request_headers = request_data.get(..eoh_byte_index).unwrap().to_vec();
+                if let Some(headers) = request_data.get(..eoh_byte_index) {
+                    request_headers = headers.to_vec();
+                } else {
+                    warn!(cfg, "[{worker_id}]: We could not get the request headers from the buffer. The buffer has a length of {buffer_size} and we got {bytes_read} bytes.", buffer_size = config.buffer_client_receive_size);
+                    return;
+                }
                 request_body_byte_index_start = eoh_byte_index + 4; // +4 to skip over the \r\n\r\n at the end
                 trace!(cfg, "[{worker_id}]: request_body_byte_index_start: {request_body_byte_index_start}");
                 break;
@@ -313,34 +344,8 @@ impl Server {
 
         // parse http request headers, without a mem copy into a simple data structure which enables convenient access of individual header keys and values
         let mut request_headers_map = HashMap::new();
-        /// Parse HTTP request headers into a map for easy access.
-        ///
-        /// This function takes a slice of bytes representing the raw HTTP request headers,
-        /// converts it to a `String`, splits it by newline characters, and then parses each line
-        /// as a key-value pair. The result is stored in a `HashMap` where keys are header names
-        /// and values are header values.
-        ///
-        /// # Arguments
-        ///
-        /// * `request_headers_bytes` - A slice of bytes (`&[u8]`) containing the raw HTTP request headers.
-        ///
-        /// # Returns
-        ///
-        /// Returns a `HashMap<String, String>` where each key is a header name and each value is
-        /// the corresponding header value. If a header appears multiple times in the input,
-        /// only the last occurrence will be kept in the map.
-        fn parse_request_headers(request_headers_bytes: &[u8], headers_map: &mut HashMap<String, String>) {
-            let request_headers_str = String::from_utf8_lossy(request_headers_bytes);
-            for line in request_headers_str.lines() {
-                if let Some(key_value) = line.split_once(':') {
-                    let header_key = key_value.0.trim().to_lowercase();
-                    let header_value = key_value.1.trim().to_lowercase();
-                    headers_map.insert(header_key, header_value);
-                }
-            }
-        }
 
-        parse_request_headers(request_headers.as_bytes(), &mut request_headers_map);
+        Server::parse_request_headers(request_headers.as_bytes(), &mut request_headers_map);
 
         for (header_key, header_value) in &request_headers_map {
             trace!(cfg, "[{worker_id}] final request headers parsed: {header_key}: {header_value}");
@@ -354,29 +359,32 @@ impl Server {
         }
 
         // Read a request body if present
-        let content_length = request_headers_map
+        let content_length_header = request_headers_map
             .get("content-length")
             .and_then(|len| len.parse::<usize>().ok());
 
-        let request_body: Vec<u8> = if let Some(length) = content_length {
-            debug!(cfg, "[{worker_id}]: Content-Length header found, reading {length} bytes of body data");
+        let request_body: Vec<u8> = if let Some(http_request_content_length) = content_length_header {
+            debug!(cfg, "[{worker_id}]: Content-Length header found, reading {http_request_content_length} bytes of body data");
 
             // First, get any body data that was already read into request_data
             let mut body = if request_data.len() > request_body_byte_index_start {
                 debug!(cfg, "[{worker_id}]: receive beginning of body data ({} bytes) from previous reads of request headers into body", request_data.len() - request_body_byte_index_start);
                 trace!(cfg, "[{worker_id}]: data raw: {}", highlighted_hex_vec(&request_data[request_body_byte_index_start..], 0, cfg));
                 trace!(cfg, "[{worker_id}]: data string: {}", String::from_utf8_lossy(&request_data[request_body_byte_index_start..]));
-                request_data[request_body_byte_index_start..].to_vec()
+                request_data.get(request_body_byte_index_start..).unwrap_or_default().to_vec()
             } else {
                 Vec::new()
             };
 
-            // Continue reading until we have all the body data
-            while body.len() < length {
-                let remaining = length - body.len();
+            // read remaining body data from the stream until we have either read the requested
+            // number of bytes or the stream has been closed
+            while body.len() < http_request_content_length {
+                let remaining = http_request_content_length - body.len();
                 let to_read = remaining.min(config.buffer_client_receive_size);
+                let buffer_slice = buffer.get_mut(..to_read)
+                    .expect("Unable to get u8 vec slice for receive buffer");
 
-                let Ok(bytes_read) = Self::read_stream_into(&mut buffer[..to_read], stream, worker_id, cfg) else {
+                let Ok(bytes_read) = Self::read_stream_into(buffer_slice, stream, worker_id, cfg) else {
                     warn!(cfg, "[{worker_id}]: Failed to read request body data");
                     return;
                 };
@@ -389,7 +397,7 @@ impl Server {
                 trace!(cfg, "[{worker_id}]: body data chunk raw: {}", highlighted_hex_vec(&buffer[..bytes_read], body.len(), cfg));
                 trace!(cfg, "[{worker_id}]: body data chunk string: {}", String::from_utf8_lossy(&buffer[..bytes_read]));
 
-                body.extend_from_slice(&buffer[..bytes_read]);
+                body.extend_from_slice(buffer.get(..bytes_read).unwrap_or_default());
             }
 
             debug!(cfg, "[{worker_id}]: Finished reading request body, total bytes read: {}", body.len());
@@ -468,7 +476,7 @@ impl Server {
             body.as_str(),
         );
 
-        verb!(cfg, "[{worker_id}]: Send HTTP {status_code} {status_message} to client {}", stream.peer_addr().unwrap());
+        verb!(cfg, "[{worker_id}]: Send HTTP {status_code} {status_message} to client at {}", stream.peer_addr().expect("Failed to get peer address"));
         let _ = stream.write(response.as_bytes());
         stream.flush().ok();
     }

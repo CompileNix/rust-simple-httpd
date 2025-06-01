@@ -59,7 +59,6 @@ pub fn parse_duration(s: &str) -> Result<Duration, ConfigError> {
     let mut total_seconds: u64 = 0;
 
     for part in parts {
-        #[allow(clippy::wildcard_in_or_patterns)]
         let sec = match part.chars().last() {
             Some('h') => parse_part(part, 3600),
             Some('m') => parse_part(part, 60),

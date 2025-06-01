@@ -51,7 +51,6 @@ impl Color {
 }
 
 pub trait Colorize {
-    #[allow(dead_code)]
     fn colorize(&self, color: Color) -> ColorizedText;
     fn red(&self) -> ColorizedText;
     fn yellow(&self) -> ColorizedText;
